@@ -1,8 +1,9 @@
-name: Create Tag
+name: Publish
 
 on:
   push:
-    branches: [main]
+    tags:
+      - "**"
 
 permissions:
   contents: write
@@ -22,68 +23,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Detect bump level from commit messages
-        id: bump
-        run: |
-          commits=$(git log -1 --pretty=format:"%H")
-          messages=$(git log ${{ github.event.before }}..${{ github.sha }} --pretty=format:"%s%n%b")
-
-          bump="patch"
-
-          echo "$messages" | grep -qiE "BREAKING CHANGE" && bump="major"
-          echo "$messages" | grep -qiE "^feat!:" && bump="major"
-
-          if [ "$bump" != "major" ]; then
-            echo "$messages" | grep -qiE "^feat(\(|:)" && bump="minor"
-          fi
-
-          echo "bump=$bump" >> $GITHUB_OUTPUT
-
-      - name: Get latest semantic tag
-        id: version
-        run: |
-          latest=$(git tag --list "v*" | sort -V | tail -n1)
-
-          if [ -z "$latest" ]; then
-            major=1
-            minor=0
-            patch=0
-          else
-            ver=${latest#v}
-            IFS='.' read -r major minor patch <<< "$ver"
-
-            case "${{ steps.bump.outputs.bump }}" in
-              major)
-                major=$((major+1))
-                minor=0
-                patch=0
-                ;;
-              minor)
-                minor=$((minor+1))
-                patch=0
-                ;;
-              patch)
-                patch=$((patch+1))
-                ;;
-            esac
-          fi
-
-          newTag="v$major.$minor.$patch"
-          echo "tag=$newTag" >> $GITHUB_OUTPUT
-
-      - name: Create tag
-        run: |
-          git tag ${{ steps.version.outputs.tag }}
-          git push origin ${{ steps.version.outputs.tag }}
-
-      - name: Create GitHub Release
-        run: |
-          gh release create ${{ steps.version.outputs.tag }} \
-            --title "${{ steps.version.outputs.tag }}" \
-            --notes ""
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Package and release
         uses: BigWigsMods/packager@v2

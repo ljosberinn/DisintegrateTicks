@@ -1,0 +1,86 @@
+name: Create Tag & Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Manual version override (leave empty to auto-calculate)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          # Use manual override if provided
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "Using manual override version: ${{ github.event.inputs.version }}"
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Get the latest tag matching v* pattern
+          latest_tag=$(git tag --list "v*" | sort -V | tail -n1)
+          if [ -z "$latest_tag" ]; then
+            # No tags found, start at 1.0.0
+            major=1
+            minor=0
+            patch=0
+          else
+            ver=${latest_tag#v}
+            IFS='.' read -r major minor patch <<< "$ver"
+          fi
+
+          # Determine bump from commit messages
+          messages=$(git log ${latest_tag:-HEAD^}..HEAD --pretty=format:"%s%n%b")
+          bump="patch"
+          echo "$messages" | grep -qiE "BREAKING CHANGE" && bump="major"
+          echo "$messages" | grep -qiE "^feat!:" && bump="major"
+          if [ "$bump" != "major" ]; then
+            echo "$messages" | grep -qiE "^feat(\(|:)" && bump="minor"
+          fi
+
+          case "$bump" in
+            major)
+              major=$((major+1))
+              minor=0
+              patch=0
+              ;;
+            minor)
+              minor=$((minor+1))
+              patch=0
+              ;;
+            patch)
+              patch=$((patch+1))
+              ;;
+          esac
+
+          new_tag="v$major.$minor.$patch"
+          echo "Calculated version: $new_tag"
+          echo "version=$new_tag" >> $GITHUB_OUTPUT
+
+      - name: Create and push tag
+        run: |
+          git tag ${{ steps.version.outputs.version }}
+          git push origin ${{ steps.version.outputs.version }}
+
+      - name: Create GitHub Release
+        run: |
+          gh release create ${{ steps.version.outputs.version }} \
+            --title "${{ steps.version.outputs.version }}" \
+            --notes ""
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
