@@ -1,0 +1,11 @@
+## Interface: 110205, 110207, 120000
+## Title: Disintegrate Ticks
+## Author: Xephyris, Vollmer
+## Version @project-version@
+## DefaultState: Enabled
+## IconTexture: Interface\Icons\ability_evoker_disintegrate
+## Category: Evoker
+
+## X-Curse-Project-ID: 1390466
+
+Init.lua
