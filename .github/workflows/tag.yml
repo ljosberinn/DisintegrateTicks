@@ -73,9 +73,9 @@ jobs:
           git push origin ${{ steps.version.outputs.tag }}
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release create ${{ steps.version.outputs.tag }} \
+            --title "${{ steps.version.outputs.tag }}" \
+            --notes ""
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
