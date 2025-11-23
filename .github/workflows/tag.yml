@@ -1,4 +1,4 @@
-name: Semantic Versioning via Conventional Commits
+name: Create Tag
 
 on:
   push:
