@@ -3,6 +3,11 @@ if select(3, UnitClass("player")) ~= 13 then
 	return
 end
 
+---@class CastBarInformation
+---@field width number
+---@field height number
+---@field anchor Frame
+
 ---@class DisintegrateTicksFrame : Frame
 ---@field ticks Texture[]
 ---@field chainedTicks Texture[]
@@ -10,7 +15,7 @@ end
 ---@field maxChainedTickMarks number
 ---@field channeling boolean
 ---@field chaining boolean
----@field castBarDimensions table<'width' | 'height', number>
+---@field castBarInformation CastBarInformation
 ---@field RegisterSpecSpecificEvents fun(self: DisintegrateTicksFrame)
 ---@field UnregisterSpecSpecificEvents fun(self: DisintegrateTicksFrame)
 ---@field CreateTick fun(self: DisintegrateTicksFrame): Texture
@@ -25,9 +30,10 @@ frame.maxTickMarks = 2
 frame.maxChainedTickMarks = 3
 frame.channeling = false
 frame.chaining = false
-frame.castBarDimensions = {
+frame.castBarInformation = {
 	width = 0,
 	height = 0,
+	anchor = PlayerCastingBarFrame,
 }
 
 function frame:RegisterSpecSpecificEvents()
@@ -44,10 +50,10 @@ function frame:UnregisterSpecSpecificEvents()
 end
 
 function frame:CreateTick()
-	local tick = PlayerCastingBarFrame:CreateTexture(nil, "OVERLAY")
+	local tick = frame.castBarInformation.anchor:CreateTexture(nil, "OVERLAY")
 
 	tick:SetColorTexture(1, 1, 1, 1)
-	tick:SetSize(2, self.castBarDimensions.height * 0.9)
+	tick:SetSize(2, self.castBarInformation.height * 0.9)
 	tick:Hide()
 
 	return tick
@@ -59,20 +65,20 @@ function frame:RebuildTickMarks()
 	self.maxTickMarks = self.maxTicks - 2
 	self.maxChainedTickMarks = self.maxTickMarks + 1
 
-	local offset = self.castBarDimensions.width / (self.maxTicks - 1)
+	local offset = self.castBarInformation.width / (self.maxTicks - 1)
 
 	for i = 1, self.maxTickMarks do
-		if not self.ticks[i] then
+		if not self.ticks[i] or self.ticks[i]:GetParent() ~= frame.castBarInformation.anchor then
 			self.ticks[i] = self:CreateTick()
 		end
 
 		self.ticks[i]:ClearAllPoints()
-		self.ticks[i]:SetPoint("CENTER", PlayerCastingBarFrame, "RIGHT", -(i * offset), 0)
+		self.ticks[i]:SetPoint("CENTER", frame.castBarInformation.anchor, "RIGHT", -(i * offset), 0)
 		self.ticks[i]:Hide()
 	end
 
 	for i = 1, self.maxChainedTickMarks do
-		if not self.chainedTicks[i] then
+		if not self.chainedTicks[i] or self.chainedTicks[i]:GetParent() ~= frame.castBarInformation.anchor then
 			self.chainedTicks[i] = self:CreateTick()
 		end
 
@@ -120,8 +126,8 @@ frame:SetScript(
 				local duration = (endTimeMs - startTimeMs) / 1000
 				local relativeInitialTickDuration = 1 - (self:GetHastedChannelDuration() / duration)
 
-				local initialOffset = self.castBarDimensions.width * relativeInitialTickDuration
-				local offset = (self.castBarDimensions.width - initialOffset) / (self.maxTicks - 1)
+				local initialOffset = self.castBarInformation.width * relativeInitialTickDuration
+				local offset = (self.castBarInformation.width - initialOffset) / (self.maxTicks - 1)
 
 				for i = 1, self.maxChainedTickMarks do
 					self.chainedTicks[i]:ClearAllPoints()
@@ -133,7 +139,13 @@ frame:SetScript(
 							self.chainedTicks[i]:Hide()
 						end
 
-						self.chainedTicks[i]:SetPoint("CENTER", PlayerCastingBarFrame, "RIGHT", -initialOffset, 0)
+						self.chainedTicks[i]:SetPoint(
+							"CENTER",
+							frame.castBarInformation.anchor,
+							"RIGHT",
+							-initialOffset,
+							0
+						)
 					else
 						self.chainedTicks[i]:SetPoint("CENTER", self.chainedTicks[i - 1], "CENTER", -offset, 0)
 						self.chainedTicks[i]:Show()
@@ -170,7 +182,61 @@ frame:RegisterSpecSpecificEvents()
 hooksecurefunc(EditModeManagerFrame, "UpdateLayoutInfo", function(editModeManagerSelf)
 	local lockToPlayerFrame = PlayerCastingBarFrame:IsAttachedToPlayerFrame()
 
-	frame.castBarDimensions.width = lockToPlayerFrame and 150 or 208
-	frame.castBarDimensions.height = lockToPlayerFrame and 10 or 11
+	frame.castBarInformation.width = lockToPlayerFrame and 150 or 208
+	frame.castBarInformation.height = lockToPlayerFrame and 10 or 11
 	frame:RebuildTickMarks()
 end)
+
+if
+	C_AddOns.DoesAddOnExist("NephUI")
+	and C_AddOns.IsAddOnLoadable("NephUI")
+	and C_AddOns.IsAddOnLoaded("NephUI")
+	and LibStub
+then
+	local ace = LibStub("AceAddon-3.0", true)
+
+	if not ace then
+		return
+	end
+
+	local ok, NephUI = pcall(ace.GetAddon, ace, "NephUI", true)
+
+	if not ok or not NephUI then
+		return
+	end
+
+	local function SetupNephUICastBar()
+		if frame.castBarInformation.anchor == NephUICastBar.status then
+			return
+		end
+
+		frame.castBarInformation.anchor = NephUICastBar.status
+		local width, height = NephUICastBar:GetSize()
+		frame.castBarInformation.width = width
+		frame.castBarInformation.height = height
+
+		frame:RebuildTickMarks()
+
+		-- fake restart the channel with a blank slate if the first cast initializing the bar was a channel
+		if frame.isChanneling then
+			frame.isChanneling = false
+			local script = frame:GetScript("OnEvent")
+			script(frame, "UNIT_SPELLCAST_CHANNEL_START")
+		end
+	end
+
+	-- never saw this branch in sactice but just to be safe
+	if NephUICastBar ~= nil then
+		SetupNephUICastBar()
+		return
+	end
+
+	-- this will get called on each spell cast start
+	hooksecurefunc(NephUI, "GetCastBar", function()
+		if NephUICastBar == nil then
+			return
+		end
+
+		SetupNephUICastBar()
+	end)
+end
