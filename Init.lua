@@ -225,7 +225,7 @@ then
 		end
 	end
 
-	-- never saw this branch in sactice but just to be safe
+	-- never saw this branch in practice but just to be safe
 	if NephUICastBar ~= nil then
 		SetupNephUICastBar()
 		return
