@@ -53,7 +53,6 @@ function frame:CreateTick()
 	local tick = frame.castBarInformation.anchor:CreateTexture(nil, "OVERLAY")
 
 	tick:SetColorTexture(1, 1, 1, 1)
-	tick:SetSize(2, self.castBarInformation.height * 0.9)
 	tick:Hide()
 
 	return tick
@@ -72,6 +71,7 @@ function frame:RebuildTickMarks()
 			self.ticks[i] = self:CreateTick()
 		end
 
+		self.ticks[i]:SetSize(2, self.castBarInformation.height * 0.9)
 		self.ticks[i]:ClearAllPoints()
 		self.ticks[i]:SetPoint("CENTER", frame.castBarInformation.anchor, "RIGHT", -(i * offset), 0)
 		self.ticks[i]:Hide()
@@ -82,6 +82,7 @@ function frame:RebuildTickMarks()
 			self.chainedTicks[i] = self:CreateTick()
 		end
 
+		self.chainedTicks[i]:SetSize(2, self.castBarInformation.height * 0.9)
 		self.chainedTicks[i]:Hide()
 	end
 end
@@ -223,16 +224,44 @@ then
 			local script = frame:GetScript("OnEvent")
 			script(frame, "UNIT_SPELLCAST_CHANNEL_START")
 		end
+
+		local delayTimer = nil
+
+		hooksecurefunc(NephUI, "UpdateCastBarLayout", function()
+			if NephUICastBar == nil then
+				return
+			end
+
+			if delayTimer ~= nil then
+				delayTimer:Cancel()
+				delayTimer = nil
+			end
+
+			delayTimer = C_Timer.NewTimer(1, function()
+				local newWidth, newHeight = NephUICastBar:GetSize()
+
+				if newWidth == frame.castBarInformation.width and newHeight == frame.castBarInformation.height then
+					return
+				end
+
+				frame.castBarInformation.width = newWidth
+				frame.castBarInformation.height = newHeight
+
+				frame:RebuildTickMarks()
+
+				delayTimer = nil
+			end)
+		end)
 	end
 
-	-- never saw this branch in practice but just to be safe
+	-- never saw this branch in sactice but just to be safe
 	if NephUICastBar ~= nil then
 		SetupNephUICastBar()
 		return
 	end
 
 	-- this will get called on each spell cast start
-	hooksecurefunc(NephUI, "GetCastBar", function()
+	hooksecurefunc(NephUI.CastBars, "GetCastBar", function()
 		if NephUICastBar == nil then
 			return
 		end
