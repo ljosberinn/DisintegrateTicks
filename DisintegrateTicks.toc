@@ -5,6 +5,7 @@
 ## DefaultState: Enabled
 ## IconTexture: Interface\Icons\ability_evoker_disintegrate
 ## Category: Evoker
+## OptionalDeps: NephUI
 
 ## X-Curse-Project-ID: 1390466
 ## X-Wago-ID: BKpqdyGE
