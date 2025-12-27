@@ -269,3 +269,98 @@ then
 		SetupNephUICastBar()
 	end)
 end
+
+if
+	C_AddOns.DoesAddOnExist("UnhaltedUnitFrames")
+	and C_AddOns.IsAddOnLoadable("UnhaltedUnitFrames")
+	and C_AddOns.IsAddOnLoaded("UnhaltedUnitFrames")
+	and LibStub
+then
+	local ace = LibStub("AceAddon-3.0", true)
+
+	if not ace then
+		return
+	end
+
+	local ok, UnhaltedUnitFrames = pcall(ace.GetAddon, ace, "UnhaltedUnitFrames", true)
+
+	if not ok or not UnhaltedUnitFrames then
+		return
+	end
+
+	local castBarEnabled = true
+
+	-- first boot doesn't have them yet
+	if UnhaltedUFDB then
+		local profileCount = 0
+
+		for _, profile in pairs(UnhaltedUFDB.profiles) do
+			profileCount = profileCount + 1
+
+			-- no point looking beyond
+			if profileCount > 2 then
+				break
+			end
+		end
+
+		if profileCount == 1 then
+			for _, profile in pairs(UnhaltedUFDB.profiles) do
+				castBarEnabled = profile.player.CastBar.Enabled
+			end
+		end
+	end
+
+	hooksecurefunc(UnhaltedUnitFrames, "OnEnable", function()
+		local function HookAndAdjustCastBar()
+			if UUF_Player_CastBar == nil then
+				return
+			end
+
+			frame.castBarInformation.anchor = UUF_Player_CastBar
+
+			local width, height = UUF_Player_CastBar:GetSize()
+			frame.castBarInformation.width = width
+			frame.castBarInformation.height = height
+
+			frame:RebuildTickMarks()
+
+			local delayTimer = nil
+
+			hooksecurefunc(UUF_Player_CastBar, "SetSize", function(self, newWidth, newHeight)
+				if delayTimer ~= nil then
+					delayTimer:Cancel()
+					delayTimer = nil
+				end
+
+				delayTimer = C_Timer.NewTimer(1, function()
+					if newWidth == frame.castBarInformation.width and newHeight == frame.castBarInformation.height then
+						return
+					end
+
+					frame.castBarInformation.width = newWidth
+					frame.castBarInformation.height = newHeight
+
+					frame:RebuildTickMarks()
+
+					delayTimer = nil
+				end)
+			end)
+		end
+
+		if castBarEnabled then
+			hooksecurefunc(UnhaltedUnitFrames, "OnEnable", HookAndAdjustCastBar)
+		else
+			local initialized = false
+
+			hooksecurefunc(UUF_Player_CastBar, "Show", function()
+				if initialized then
+					return
+				end
+
+				initialized = true
+
+				HookAndAdjustCastBar()
+			end)
+		end
+	end)
+end
