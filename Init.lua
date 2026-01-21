@@ -271,6 +271,101 @@ then
 end
 
 if
+	C_AddOns.DoesAddOnExist("BetterCooldownManager")
+	and C_AddOns.IsAddOnLoadable("BetterCooldownManager")
+	and C_AddOns.IsAddOnLoaded("BetterCooldownManager")
+	and LibStub
+then
+	local ace = LibStub("AceAddon-3.0", true)
+
+	if not ace then
+		return
+	end
+
+	local ok, BetterCooldownManager = pcall(ace.GetAddon, ace, "BetterCooldownManager", true)
+
+	if not ok or not BetterCooldownManager then
+		return
+	end
+
+	local castBarEnabled = true
+
+	-- first boot doesn't have them yet
+	if BCDMDB then
+		local profileCount = 0
+
+		for _, profile in pairs(BCDMDB.profiles) do
+			profileCount = profileCount + 1
+
+			-- no point looking beyond
+			if profileCount > 2 then
+				break
+			end
+		end
+
+		if profileCount == 1 then
+			for _, profile in pairs(BCDMDB.profiles) do
+				castBarEnabled = profile.CastBar.Enabled
+			end
+		end
+	end
+
+	hooksecurefunc(BetterCooldownManager, "OnEnable", function()
+		local function HookAndAdjustCastBar()
+			if BCDM_CastBar == nil then
+				return
+			end
+
+			frame.castBarInformation.anchor = BCDM_CastBar.Status
+
+			local width, height = BCDM_CastBar:GetSize()
+			frame.castBarInformation.width = width
+			frame.castBarInformation.height = height
+
+			frame:RebuildTickMarks()
+
+			local delayTimer = nil
+
+			hooksecurefunc(BCDM_CastBar, "SetSize", function(self, newWidth, newHeight)
+				if delayTimer ~= nil then
+					delayTimer:Cancel()
+					delayTimer = nil
+				end
+
+				delayTimer = C_Timer.NewTimer(1, function()
+					if newWidth == frame.castBarInformation.width and newHeight == frame.castBarInformation.height then
+						return
+					end
+
+					frame.castBarInformation.width = newWidth
+					frame.castBarInformation.height = newHeight
+
+					frame:RebuildTickMarks()
+
+					delayTimer = nil
+				end)
+			end)
+		end
+
+		if castBarEnabled then
+			HookAndAdjustCastBar()
+		else
+			local initialized = false
+
+			hooksecurefunc(BCDM_CastBar, "Show", function()
+				if initialized then
+					return
+				end
+
+				initialized = true
+
+				HookAndAdjustCastBar()
+			end)
+		end
+	end)
+end
+
+if
 	C_AddOns.DoesAddOnExist("UnhaltedUnitFrames")
 	and C_AddOns.IsAddOnLoadable("UnhaltedUnitFrames")
 	and C_AddOns.IsAddOnLoaded("UnhaltedUnitFrames")
