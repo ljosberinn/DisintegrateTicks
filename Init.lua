@@ -93,6 +93,29 @@ function frame:GetHastedChannelDuration()
 	return self.baseDuration / haste
 end
 
+---@param width number
+---@param height number
+function frame:AdjustDimensions(width, height)
+	width = math.ceil(width)
+	height = math.ceil(height)
+
+	if width ~= self.castBarInformation.width or height ~= self.castBarInformation.height then
+		self.castBarInformation.width = width
+		self.castBarInformation.height = height
+		self:RebuildTickMarks()
+	end
+end
+
+---@param newAnchor Frame
+function frame:UpdateAnchor(newAnchor)
+	if self.castBarInformation.anchor == newAnchor then
+		return
+	end
+
+	self.castBarInformation.anchor = newAnchor
+	self:RebuildTickMarks()
+end
+
 frame:SetScript(
 	"OnEvent",
 	---@param self DisintegrateTicksFrame
@@ -183,9 +206,7 @@ frame:RegisterSpecSpecificEvents()
 hooksecurefunc(EditModeManagerFrame, "UpdateLayoutInfo", function(editModeManagerSelf)
 	local lockToPlayerFrame = PlayerCastingBarFrame:IsAttachedToPlayerFrame()
 
-	frame.castBarInformation.width = lockToPlayerFrame and 150 or 208
-	frame.castBarInformation.height = lockToPlayerFrame and 10 or 11
-	frame:RebuildTickMarks()
+	frame:AdjustDimensions(lockToPlayerFrame and 150 or 208, lockToPlayerFrame and 10 or 11)
 end)
 
 if
@@ -213,10 +234,7 @@ then
 
 		frame.castBarInformation.anchor = NephUICastBar.status
 		local width, height = NephUICastBar:GetSize()
-		frame.castBarInformation.width = width
-		frame.castBarInformation.height = height
-
-		frame:RebuildTickMarks()
+		frame:AdjustDimensions(width, height)
 
 		-- fake restart the channel with a blank slate if the first cast initializing the bar was a channel
 		if frame.isChanneling then
@@ -240,14 +258,7 @@ then
 			delayTimer = C_Timer.NewTimer(1, function()
 				local newWidth, newHeight = NephUICastBar:GetSize()
 
-				if newWidth == frame.castBarInformation.width and newHeight == frame.castBarInformation.height then
-					return
-				end
-
-				frame.castBarInformation.width = newWidth
-				frame.castBarInformation.height = newHeight
-
-				frame:RebuildTickMarks()
+				frame:AdjustDimensions(newWidth, newHeight)
 
 				delayTimer = nil
 			end)
@@ -288,80 +299,13 @@ then
 		return
 	end
 
-	local castBarEnabled = true
-
-	-- first boot doesn't have them yet
-	if BCDMDB then
-		local profileCount = 0
-
-		for _, profile in pairs(BCDMDB.profiles) do
-			profileCount = profileCount + 1
-
-			-- no point looking beyond
-			if profileCount > 2 then
-				break
-			end
-		end
-
-		if profileCount == 1 then
-			for _, profile in pairs(BCDMDB.profiles) do
-				castBarEnabled = profile.CastBar.Enabled
-			end
-		end
-	end
-
 	hooksecurefunc(BetterCooldownManager, "OnEnable", function()
-		local function HookAndAdjustCastBar()
-			if BCDM_CastBar == nil then
-				return
-			end
+		hooksecurefunc(BCDM_CastBar, "Show", function(self)
+			local width, height = self:GetSize()
 
-			frame.castBarInformation.anchor = BCDM_CastBar.Status
-
-			local width, height = BCDM_CastBar:GetSize()
-			frame.castBarInformation.width = width
-			frame.castBarInformation.height = height
-
-			frame:RebuildTickMarks()
-
-			local delayTimer = nil
-
-			hooksecurefunc(BCDM_CastBar, "SetSize", function(self, newWidth, newHeight)
-				if delayTimer ~= nil then
-					delayTimer:Cancel()
-					delayTimer = nil
-				end
-
-				delayTimer = C_Timer.NewTimer(1, function()
-					if newWidth == frame.castBarInformation.width and newHeight == frame.castBarInformation.height then
-						return
-					end
-
-					frame.castBarInformation.width = newWidth
-					frame.castBarInformation.height = newHeight
-
-					frame:RebuildTickMarks()
-
-					delayTimer = nil
-				end)
-			end)
-		end
-
-		if castBarEnabled then
-			HookAndAdjustCastBar()
-		else
-			local initialized = false
-
-			hooksecurefunc(BCDM_CastBar, "Show", function()
-				if initialized then
-					return
-				end
-
-				initialized = true
-
-				HookAndAdjustCastBar()
-			end)
-		end
+			frame:AdjustDimensions(width, height)
+			frame:UpdateAnchor(self.Status)
+		end)
 	end)
 end
 
@@ -383,79 +327,12 @@ then
 		return
 	end
 
-	local castBarEnabled = true
-
-	-- first boot doesn't have them yet
-	if UnhaltedUFDB then
-		local profileCount = 0
-
-		for _, profile in pairs(UnhaltedUFDB.profiles) do
-			profileCount = profileCount + 1
-
-			-- no point looking beyond
-			if profileCount > 2 then
-				break
-			end
-		end
-
-		if profileCount == 1 then
-			for _, profile in pairs(UnhaltedUFDB.profiles) do
-				castBarEnabled = profile.player.CastBar.Enabled
-			end
-		end
-	end
-
 	hooksecurefunc(UnhaltedUnitFrames, "OnEnable", function()
-		local function HookAndAdjustCastBar()
-			if UUF_Player_CastBar == nil then
-				return
-			end
+		hooksecurefunc(UUF_Player_CastBar, "Show", function(self)
+			local width, height = self:GetSize()
 
-			frame.castBarInformation.anchor = UUF_Player_CastBar
-
-			local width, height = UUF_Player_CastBar:GetSize()
-			frame.castBarInformation.width = width
-			frame.castBarInformation.height = height
-
-			frame:RebuildTickMarks()
-
-			local delayTimer = nil
-
-			hooksecurefunc(UUF_Player_CastBar, "SetSize", function(self, newWidth, newHeight)
-				if delayTimer ~= nil then
-					delayTimer:Cancel()
-					delayTimer = nil
-				end
-
-				delayTimer = C_Timer.NewTimer(1, function()
-					if newWidth == frame.castBarInformation.width and newHeight == frame.castBarInformation.height then
-						return
-					end
-
-					frame.castBarInformation.width = newWidth
-					frame.castBarInformation.height = newHeight
-
-					frame:RebuildTickMarks()
-
-					delayTimer = nil
-				end)
-			end)
-		end
-
-		if castBarEnabled then
-			HookAndAdjustCastBar()
-		else
-			local initialized = false
-
-			hooksecurefunc(UUF_Player_CastBar, "Show", function()
-				if initialized then
-					return
-				end
-
-				initialized = true
-
-				HookAndAdjustCastBar()
-			end)
-		end
+			frame:AdjustDimensions(width, height)
+			frame:UpdateAnchor(self)
+		end)
 	end)
 end
