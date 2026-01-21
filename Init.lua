@@ -348,7 +348,7 @@ then
 		end
 
 		if castBarEnabled then
-			hooksecurefunc(UnhaltedUnitFrames, "OnEnable", HookAndAdjustCastBar)
+			HookAndAdjustCastBar()
 		else
 			local initialized = false
 
