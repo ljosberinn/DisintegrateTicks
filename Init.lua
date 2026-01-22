@@ -336,3 +336,43 @@ then
 		end)
 	end)
 end
+
+if
+	C_AddOns.DoesAddOnExist("MidnightSimpleUnitFrames")
+	and C_AddOns.IsAddOnLoadable("MidnightSimpleUnitFrames")
+	and C_AddOns.IsAddOnLoaded("MidnightSimpleUnitFrames")
+then
+	---@type FunctionContainer|nil
+	local ticker = nil
+	local attempts = 0
+	local maxAttempts = 5
+
+	-- addon is a mess, can't properly detect where/when this gets created and it takes ages to load
+	local function HookCastBarWhenPresent()
+		attempts = attempts + 1
+
+		if attempts > maxAttempts and ticker ~= nil then
+			ticker:Cancel()
+			ticker = nil
+			return
+		end
+
+		if MSUF_PlayerCastbar == nil then
+			return
+		end
+
+		if ticker ~= nil then
+			ticker:Cancel()
+			ticker = nil
+		end
+
+		hooksecurefunc(MSUF_PlayerCastbar, "Show", function(self)
+			local width, height = self:GetSize()
+
+			frame:AdjustDimensions(width, height)
+			frame:UpdateAnchor(self.statusBar)
+		end)
+	end
+
+	ticker = C_Timer.NewTicker(1, HookCastBarWhenPresent)
+end

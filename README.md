@@ -8,3 +8,6 @@ Supported Cast Bars:
 - NephUI
 - UnhaltedUnitFrames
 - BetterCooldownManager
+- MidnightSimpleUnitFrames
+
+If you have multiple cast bars shown, e.g. from both unit frames and BetterCooldownManager, disable all but one, otherwise they'll compete.
