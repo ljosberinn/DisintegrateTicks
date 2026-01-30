@@ -376,3 +376,19 @@ then
 
 	ticker = C_Timer.NewTicker(1, HookCastBarWhenPresent)
 end
+
+if
+	C_AddOns.DoesAddOnExist("ActionBarsEnhanced")
+	and C_AddOns.IsAddOnLoadable("ActionBarsEnhanced")
+	and C_AddOns.IsAddOnLoaded("ActionBarsEnhanced")
+then
+	PlayerCastingBarFrame:HookScript("OnSizeChanged", function(self)
+		if frame.castBarInformation.anchor ~= self then
+			return
+		end
+
+		local width, height = self:GetSize()
+
+		frame:AdjustDimensions(width, height)
+	end)
+end
