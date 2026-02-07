@@ -137,6 +137,11 @@ frame:SetScript(
 		elseif event == "TRAIT_CONFIG_UPDATED" then
 			self:RebuildTickMarks()
 		elseif event == "UNIT_SPELLCAST_CHANNEL_START" or event == "UNIT_SPELLCAST_CHANNEL_UPDATE" then
+			-- ignore other channels such as Fishing or quest-related casts
+			if select(3, ...) ~= 356995 then
+				return
+			end
+
 			if self.channeling then
 				if not self.chaining then
 					for i = 1, self.maxTickMarks do
