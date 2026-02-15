@@ -127,8 +127,8 @@ frame:SetScript(
 			---@type number
 			local currentSpecId = PlayerUtil.GetCurrentSpecID()
 
-			-- only devastation. see ID columns here: https://wago.tools/db2/ChrSpecialization
-			if currentSpecId == 1467 then
+			-- only devastation and preservation. see ID columns here: https://wago.tools/db2/ChrSpecialization
+			if currentSpecId == 1467 or currentSpecId == 1468 then
 				self:RegisterSpecSpecificEvents()
 				self:RebuildTickMarks()
 			else
