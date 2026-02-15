@@ -6,6 +6,7 @@
 ## IconTexture: Interface\Icons\ability_evoker_disintegrate
 ## Category: Evoker
 ## OptionalDeps: NephUI, UnhaltedUnitFrames, BetterCooldownManager, MidnightSimpleUnitFrames, ActionBarsEnhanced
+## SavedVariables: DisintegrateTicksSaved
 
 ## X-Curse-Project-ID: 1390466
 ## X-Wago-ID: BKpqdyGE
