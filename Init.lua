@@ -148,7 +148,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled and "enabled" or "disabled"
 		)
 
-		self:UpdateWarningPosition()
+		self:MaybeUpdateWarningPosition()
 	end
 
 	function frame:SetClipWarningFontSize(nextSize)
@@ -179,11 +179,11 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		end
 	end
 
-	function frame:UpdateWarningPosition()
+	function frame:MaybeUpdateWarningPosition()
 		if DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled then
 			self.Warning:ClearAllPoints()
 			self.Warning:SetPoint(
-				DisintegrateTicksSaved.MassDisintegrateClipWarning.position,
+				DisintegrateTicksSaved.MassDisintegrateClipWarning.point,
 				self.castBarInformation.anchor,
 				"CENTER",
 				DisintegrateTicksSaved.MassDisintegrateClipWarning.x,
@@ -207,7 +207,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			or x ~= DisintegrateTicksSaved.MassDisintegrateClipWarning.x
 			or y ~= DisintegrateTicksSaved.MassDisintegrateClipWarning.y
 		then
-			DisintegrateTicksSaved.MassDisintegrateClipWarning.position = point
+			DisintegrateTicksSaved.MassDisintegrateClipWarning.point = point
 			DisintegrateTicksSaved.MassDisintegrateClipWarning.x = x
 			DisintegrateTicksSaved.MassDisintegrateClipWarning.y = y
 
@@ -294,10 +294,10 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 
 		self.castBarInformation.anchor = newAnchor
 		self:RebuildTickMarks()
-		self:UpdateWarningPosition()
+		self:MaybeUpdateWarningPosition()
 	end
 
-	frame:UpdateWarningPosition()
+	frame:MaybeUpdateWarningPosition()
 
 	frame:SetScript(
 		"OnEvent",
