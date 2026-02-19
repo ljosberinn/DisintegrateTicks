@@ -67,14 +67,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		DisintegrateTicksSaved.MassDisintegrateClipWarning.color[3],
 		DisintegrateTicksSaved.MassDisintegrateClipWarning.color[4]
 	)
-	frame.Warning:ClearAllPoints()
-	frame.Warning:SetPoint(
-		DisintegrateTicksSaved.MassDisintegrateClipWarning.point,
-		frame.castBarInformation.anchor,
-		"CENTER",
-		DisintegrateTicksSaved.MassDisintegrateClipWarning.x,
-		DisintegrateTicksSaved.MassDisintegrateClipWarning.y
-	)
+
 	frame.Warning:Hide()
 
 	frame.empowers = {
@@ -86,22 +79,22 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	frame.massDisintegrateStacks = 0
 
 	function frame:RegisterSpecSpecificEvents()
-		frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
-		frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_UPDATE", "player")
-		frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
-		frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
-		frame:RegisterEvent("TRAIT_CONFIG_UPDATED")
+		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
+		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_UPDATE", "player")
+		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
+		self:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+		self:RegisterEvent("TRAIT_CONFIG_UPDATED")
 	end
 
 	function frame:UnregisterSpecSpecificEvents()
-		frame:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_START")
-		frame:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
-		frame:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
-		frame:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_START")
+		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
+		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
+		self:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 	end
 
 	function frame:CreateTick()
-		local tick = frame.castBarInformation.anchor:CreateTexture(nil, "OVERLAY")
+		local tick = self.castBarInformation.anchor:CreateTexture(nil, "OVERLAY")
 
 		tick:SetColorTexture(
 			DisintegrateTicksSaved.Color[1],
@@ -161,7 +154,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		if nextSize ~= DisintegrateTicksSaved.MassDisintegrateClipWarning.fontSize then
 			DisintegrateTicksSaved.MassDisintegrateClipWarning.fontSize = nextSize
 
-			frame.Warning:SetFont(frame.Warning:GetFont(), nextSize)
+			self.Warning:SetFont(self.Warning:GetFont(), nextSize)
 
 			print("DisintegrateTicks: the font size is now", nextSize)
 		end
@@ -175,10 +168,21 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		if text ~= DisintegrateTicksSaved.MassDisintegrateClipWarning.text then
 			DisintegrateTicksSaved.MassDisintegrateClipWarning.text = text
 
-			frame.Warning:SetText(text)
+			self.Warning:SetText(text)
 
 			print("DisintegrateTicks: the text is now", text)
 		end
+	end
+
+	function frame:UpdateWarningPosition()
+		self.Warning:ClearAllPoints()
+		self.Warning:SetPoint(
+			DisintegrateTicksSaved.MassDisintegrateClipWarning.position,
+			self.castBarInformation.anchor,
+			"CENTER",
+			DisintegrateTicksSaved.MassDisintegrateClipWarning.x,
+			DisintegrateTicksSaved.MassDisintegrateClipWarning.y
+		)
 	end
 
 	function frame:SetClipWarningPosition(point, x, y)
@@ -194,9 +198,6 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			DisintegrateTicksSaved.MassDisintegrateClipWarning.position = point
 			DisintegrateTicksSaved.MassDisintegrateClipWarning.x = x
 			DisintegrateTicksSaved.MassDisintegrateClipWarning.y = y
-
-			frame.Warning:ClearAllPoints()
-			frame.Warning:SetPoint(point, frame.castBarInformation.anchor, "CENTER", x, y)
 		end
 	end
 
@@ -214,7 +215,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			DisintegrateTicksSaved.MassDisintegrateClipWarning.color[4]
 		)
 
-		frame.Warning:SetTextColor(color.r, color.g, color.b, color.a)
+		self.Warning:SetTextColor(color.r, color.g, color.b, color.a)
 
 		print(
 			"DisintegrateTicks: the color of the clip warning is now",
@@ -232,18 +233,18 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		local offset = self.castBarInformation.width / (self.maxTicks - 1)
 
 		for i = 1, self.maxTickMarks do
-			if not self.ticks[i] or self.ticks[i]:GetParent() ~= frame.castBarInformation.anchor then
+			if not self.ticks[i] or self.ticks[i]:GetParent() ~= self.castBarInformation.anchor then
 				self.ticks[i] = self:CreateTick()
 			end
 
 			self.ticks[i]:SetSize(2, self.castBarInformation.height * 0.9)
 			self.ticks[i]:ClearAllPoints()
-			self.ticks[i]:SetPoint("CENTER", frame.castBarInformation.anchor, "RIGHT", -(i * offset), 0)
+			self.ticks[i]:SetPoint("CENTER", self.castBarInformation.anchor, "RIGHT", -(i * offset), 0)
 			self.ticks[i]:Hide()
 		end
 
 		for i = 1, self.maxChainedTickMarks do
-			if not self.chainedTicks[i] or self.chainedTicks[i]:GetParent() ~= frame.castBarInformation.anchor then
+			if not self.chainedTicks[i] or self.chainedTicks[i]:GetParent() ~= self.castBarInformation.anchor then
 				self.chainedTicks[i] = self:CreateTick()
 			end
 
@@ -279,7 +280,10 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 
 		self.castBarInformation.anchor = newAnchor
 		self:RebuildTickMarks()
+		self:UpdateWarningPosition()
 	end
+
+	frame:UpdateWarningPosition()
 
 	frame:SetScript(
 		"OnEvent",
@@ -355,7 +359,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 
 							self.chainedTicks[i]:SetPoint(
 								"CENTER",
-								frame.castBarInformation.anchor,
+								self.castBarInformation.anchor,
 								"RIGHT",
 								-initialOffset,
 								0

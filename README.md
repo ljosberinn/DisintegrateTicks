@@ -69,7 +69,7 @@ By default, the warning will be 100px above the cast bar. This may not be suited
 /run DisintegrateTicksFrame:SetClipWarningPosition(point, x, y)
 ```
 
-Available points are `TOP` and `BOTTOM`.
+Available points are `"TOP"` and `"BOTTOM"`. The quotes matter.
 
 ### Change Color
 
