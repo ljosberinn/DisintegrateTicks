@@ -147,6 +147,10 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			"DisintegrateTicks: Mass Disintegrate Clip Warning is now",
 			DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled and "enabled" or "disabled"
 		)
+
+		if DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled then
+			self:UpdateWarningPosition()
+		end
 	end
 
 	function frame:SetClipWarningFontSize(nextSize)
@@ -286,7 +290,9 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		self:UpdateWarningPosition()
 	end
 
-	frame:UpdateWarningPosition()
+	if DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled then
+		frame:UpdateWarningPosition()
+	end
 
 	frame:SetScript(
 		"OnEvent",
