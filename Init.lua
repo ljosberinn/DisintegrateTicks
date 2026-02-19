@@ -148,9 +148,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled and "enabled" or "disabled"
 		)
 
-		if DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled then
-			self:UpdateWarningPosition()
-		end
+		self:UpdateWarningPosition()
 	end
 
 	function frame:SetClipWarningFontSize(nextSize)
@@ -182,14 +180,16 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	end
 
 	function frame:UpdateWarningPosition()
-		self.Warning:ClearAllPoints()
-		self.Warning:SetPoint(
-			DisintegrateTicksSaved.MassDisintegrateClipWarning.position,
-			self.castBarInformation.anchor,
-			"CENTER",
-			DisintegrateTicksSaved.MassDisintegrateClipWarning.x,
-			DisintegrateTicksSaved.MassDisintegrateClipWarning.y
-		)
+		if DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled then
+			self.Warning:ClearAllPoints()
+			self.Warning:SetPoint(
+				DisintegrateTicksSaved.MassDisintegrateClipWarning.position,
+				self.castBarInformation.anchor,
+				"CENTER",
+				DisintegrateTicksSaved.MassDisintegrateClipWarning.x,
+				DisintegrateTicksSaved.MassDisintegrateClipWarning.y
+			)
+		end
 	end
 
 	function frame:SetClipWarningPosition(point, x, y)
@@ -297,9 +297,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		self:UpdateWarningPosition()
 	end
 
-	if DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled then
-		frame:UpdateWarningPosition()
-	end
+	frame:UpdateWarningPosition()
 
 	frame:SetScript(
 		"OnEvent",
