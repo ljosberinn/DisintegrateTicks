@@ -193,6 +193,11 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	end
 
 	function frame:SetClipWarningPosition(point, x, y)
+		if point ~= "TOP" and point ~= "BOTTOM" and point ~= nil then
+			print('DisintegrateTicks: Point must be either "TOP", "BOTTOM" or nil. Mind the quotes.')
+			return
+		end
+
 		point = point or "TOP"
 		x = x or 0
 		y = y or 150
@@ -205,6 +210,8 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			DisintegrateTicksSaved.MassDisintegrateClipWarning.position = point
 			DisintegrateTicksSaved.MassDisintegrateClipWarning.x = x
 			DisintegrateTicksSaved.MassDisintegrateClipWarning.y = y
+
+			print("DisintegrateTicks: Set clip warning position to", point, "at x=", x, ", y=", y)
 		end
 	end
 
