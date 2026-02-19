@@ -77,6 +77,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		[382411] = true, -- eternity surge font of magic
 	}
 	frame.massDisintegrateStacks = 0
+	frame.lastGainedStack = 0
 
 	function frame:RegisterSpecSpecificEvents()
 		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
@@ -84,6 +85,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
 		self:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
 		self:RegisterEvent("TRAIT_CONFIG_UPDATED")
+		self:RegisterEvent("PLAYER_DEAD")
 	end
 
 	function frame:UnregisterSpecSpecificEvents()
@@ -91,6 +93,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
 		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
 		self:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+		self:UnregisterEvent("PLAYER_DEAD")
 	end
 
 	function frame:CreateTick()
@@ -303,6 +306,8 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 				else
 					self:UnregisterSpecSpecificEvents()
 				end
+			elseif event == "PLAYER_DEAD" then
+				self.massDisintegrateStacks = 0
 			elseif event == "TRAIT_CONFIG_UPDATED" then
 				self:RebuildTickMarks()
 			elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
@@ -318,6 +323,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 				end
 
 				self.massDisintegrateStacks = self.massDisintegrateStacks + 1
+				self.lastGainedStack = GetTime()
 			elseif event == "UNIT_SPELLCAST_CHANNEL_START" or event == "UNIT_SPELLCAST_CHANNEL_UPDATE" then
 				-- ignore other channels such as Fishing or quest-related casts
 				if select(3, ...) ~= 356995 then
@@ -325,8 +331,14 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 				end
 
 				if DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled and self.massDisintegrateStacks > 0 then
-					self.Warning:Show()
-					self.massDisintegrateStacks = self.massDisintegrateStacks - 1
+					local expired = GetTime() - self.lastGainedStack > 15
+
+					if expired then
+						self.massDisintegrateStacks = 0
+					else
+						self.Warning:Show()
+						self.massDisintegrateStacks = self.massDisintegrateStacks - 1
+					end
 				else
 					self.Warning:Hide()
 				end
