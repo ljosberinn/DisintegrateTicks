@@ -83,7 +83,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
 		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_UPDATE", "player")
 		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
-		self:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+		self:RegisterUnitEvent("UNIT_SPELLCAST_EMPOWER_STOP", "player")
 		self:RegisterEvent("TRAIT_CONFIG_UPDATED")
 		self:RegisterEvent("PLAYER_DEAD")
 	end
@@ -92,7 +92,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_START")
 		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
 		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
-		self:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+		self:UnregisterEvent("UNIT_SPELLCAST_EMPOWER_STOP")
 		self:UnregisterEvent("PLAYER_DEAD")
 	end
 
@@ -321,10 +321,10 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 				self.massDisintegrateStacks = 0
 			elseif event == "TRAIT_CONFIG_UPDATED" then
 				self:RebuildTickMarks()
-			elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
-				local spellId = select(3, ...)
+			elseif event == "UNIT_SPELLCAST_EMPOWER_STOP" then
+				local unit, castGuid, spellId, complete, interruptedBy, castBarId = ...
 
-				if self.empowers[spellId] == nil then
+				if not complete or self.empowers[spellId] == nil then
 					return
 				end
 
@@ -609,6 +609,19 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			local width, height = self:GetSize()
 
 			frame:AdjustDimensions(width, height)
+		end)
+	end
+
+	if
+		C_AddOns.DoesAddOnExist("EnhanceQOL")
+		and C_AddOns.IsAddOnLoadable("EnhanceQOL")
+		and C_AddOns.IsAddOnLoaded("EnhanceQOL")
+		and EQOLPlayerCastBar
+	then
+		hooksecurefunc(EQOLPlayerCastBar, "Show", function(self)
+			local width, height = self:GetSize()
+			frame:AdjustDimensions(width, height)
+			frame:UpdateAnchor(self)
 		end)
 	end
 end)
