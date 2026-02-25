@@ -70,22 +70,20 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 
 	frame.Warning:Hide()
 
-	frame.empowers = {
-		[357208] = true, -- fire breath
-		[382266] = true, -- fire breath font of magic
-		[359073] = true, -- eternity surge
-		[382411] = true, -- eternity surge font of magic
-	}
 	frame.massDisintegrateStacks = 0
 	frame.lastGainedStack = 0
+	frame.hasTipTheScalesActive = false
 
 	function frame:RegisterSpecSpecificEvents()
 		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
 		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_UPDATE", "player")
 		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
 		self:RegisterUnitEvent("UNIT_SPELLCAST_EMPOWER_STOP", "player")
+		self:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
 		self:RegisterEvent("TRAIT_CONFIG_UPDATED")
 		self:RegisterEvent("PLAYER_DEAD")
+		self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
+		self:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
 	end
 
 	function frame:UnregisterSpecSpecificEvents()
@@ -93,7 +91,19 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
 		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
 		self:UnregisterEvent("UNIT_SPELLCAST_EMPOWER_STOP")
+		self:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 		self:UnregisterEvent("PLAYER_DEAD")
+		self:UnregisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
+		self:UnregisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
+	end
+
+	---@param spellId number
+	---@return boolean
+	function frame:IsEmpower(spellId)
+		return spellId == 357208 -- fire breath
+			or spellId == 382266 -- font of magic fire breath
+			or spellId == 359073 -- eternity surge
+			or spellId == 382411 -- font of magic eternity surge
 	end
 
 	function frame:CreateTick()
@@ -299,6 +309,11 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		self:MaybeUpdateWarningPosition()
 	end
 
+	---@return boolean
+	function frame:KnowsMassDisintegrate()
+		return C_SpellBook.IsSpellKnownOrInSpellBook(436335)
+	end
+
 	frame:MaybeUpdateWarningPosition()
 
 	frame:SetScript(
@@ -323,15 +338,18 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 				self.massDisintegrateStacks = 0
 			elseif event == "TRAIT_CONFIG_UPDATED" then
 				self:RebuildTickMarks()
+			elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+				local unit, castGuid, spellId = ...
+
+				if self.hasTipTheScalesActive and self:IsEmpower(spellId) and self:KnowsMassDisintegrate() then
+					self.hasTipTheScalesActive = false
+					self.massDisintegrateStacks = self.massDisintegrateStacks + 1
+					self.lastGainedStack = GetTime()
+				end
 			elseif event == "UNIT_SPELLCAST_EMPOWER_STOP" then
 				local unit, castGuid, spellId, complete, interruptedBy, castBarId = ...
 
-				if not complete or self.empowers[spellId] == nil then
-					return
-				end
-
-				-- mass disint check
-				if not C_SpellBook.IsSpellKnownOrInSpellBook(436335) then
+				if not complete or not self:IsEmpower(spellId) == nil or not self:KnowsMassDisintegrate() then
 					return
 				end
 
@@ -351,6 +369,10 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 					else
 						self.Warning:Show()
 						self.massDisintegrateStacks = self.massDisintegrateStacks - 1
+
+						if self.castBarInformation.anchor.Text then
+							self.castBarInformation.anchor.Text:SetText(C_Spell.GetSpellName(436335))
+						end
 					end
 				else
 					self.Warning:Hide()
@@ -402,6 +424,18 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 					end
 
 					self.channeling = true
+				end
+			elseif event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW" then
+				local spellId = ...
+
+				if not self.hasTipTheScalesActive and self:IsEmpower(spellId) then
+					self.hasTipTheScalesActive = true
+				end
+			elseif event == "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE" then
+				local spellId = ...
+
+				if self.hasTipTheScalesActive and self:IsEmpower(spellId) then
+					self.hasTipTheScalesActive = false
 				end
 			elseif event == "UNIT_SPELLCAST_CHANNEL_STOP" then
 				self.Warning:Hide()
