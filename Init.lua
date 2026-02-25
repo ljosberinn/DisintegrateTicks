@@ -211,6 +211,8 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			DisintegrateTicksSaved.MassDisintegrateClipWarning.x = x
 			DisintegrateTicksSaved.MassDisintegrateClipWarning.y = y
 
+			self:MaybeUpdateWarningPosition()
+
 			print("DisintegrateTicks: Set clip warning position to", point, "at x=", x, ", y=", y)
 		end
 	end
