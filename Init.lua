@@ -50,6 +50,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	frame.chainedTicks = {}
 	frame.maxTickMarks = 2
 	frame.maxChainedTickMarks = 3
+	frame.lastStart = 0
 	frame.channeling = false
 	frame.chaining = false
 	frame.castBarInformation = {
@@ -361,8 +362,20 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 					return
 				end
 
-				if DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled and self.massDisintegrateStacks > 0 then
-					local expired = GetTime() - self.lastGainedStack > 15
+				local now = GetTime()
+
+				if now - self.lastStart < 0.5 then
+					return
+				end
+
+				self.lastStart = now
+
+				if
+					DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled
+					and event == "UNIT_SPELLCAST_CHANNEL_START"
+					and self.massDisintegrateStacks > 0
+				then
+					local expired = now - self.lastGainedStack > 15
 
 					if expired then
 						self.massDisintegrateStacks = 0
