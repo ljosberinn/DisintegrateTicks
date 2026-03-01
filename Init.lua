@@ -673,4 +673,17 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			frame:UpdateAnchor(self)
 		end)
 	end
+
+	if
+		C_AddOns.DoesAddOnExist("Ayije_CDM")
+		and C_AddOns.IsAddOnLoadable("Ayije_CDM")
+		and C_AddOns.IsAddOnLoaded("Ayije_CDM")
+		and Ayije_CastBar
+	then
+		hooksecurefunc(Ayije_CastBar, "Show", function(self)
+			local width, height = self:GetSize()
+			frame:AdjustDimensions(width, height)
+			frame:UpdateAnchor(self.castBar)
+		end)
+	end
 end)

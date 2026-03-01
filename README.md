@@ -89,5 +89,6 @@ Alpha is optional and will default to 1.
 - MidnightSimpleUnitFrames
 - ActionBarsEnhanced
 - EnhanceQOL
+- Ayije_CDM
 
 If you have multiple cast bars shown, e.g. from both unit frames and BetterCooldownManager, disable all but one, otherwise they'll compete.
