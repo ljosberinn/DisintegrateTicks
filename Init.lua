@@ -16,7 +16,7 @@ local addonName = ...
 ---@field castBarInformation CastBarInformation
 ---@field RegisterSpecSpecificEvents fun(self: DisintegrateTicksFrame)
 ---@field UnregisterSpecSpecificEvents fun(self: DisintegrateTicksFrame)
----@field CreateTick fun(self: DisintegrateTicksFrame): Texture
+---@field CreateTick fun(self: DisintegrateTicksFrame, name: string): Texture
 ---@field RebuildTickMarks fun(self: DisintegrateTicksFrame)
 ---@field GetHastedChannelDuration fun(self: DisintegrateTicksFrame): number
 
@@ -107,8 +107,10 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			or spellId == 382411 -- font of magic eternity surge
 	end
 
-	function frame:CreateTick()
-		local tick = self.castBarInformation.anchor:CreateTexture(nil, "OVERLAY")
+	---@param name string
+	---@return Texture
+	function frame:CreateTick(name)
+		local tick = self.castBarInformation.anchor:CreateTexture(name, "OVERLAY")
 
 		tick:SetColorTexture(
 			DisintegrateTicksSaved.Color[1],
@@ -261,7 +263,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 
 		for i = 1, self.maxTickMarks do
 			if not self.ticks[i] or self.ticks[i]:GetParent() ~= self.castBarInformation.anchor then
-				self.ticks[i] = self:CreateTick()
+				self.ticks[i] = self:CreateTick("DefaultTick" .. i)
 			end
 
 			self.ticks[i]:SetSize(2, self.castBarInformation.height * 0.9)
@@ -272,7 +274,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 
 		for i = 1, self.maxChainedTickMarks do
 			if not self.chainedTicks[i] or self.chainedTicks[i]:GetParent() ~= self.castBarInformation.anchor then
-				self.chainedTicks[i] = self:CreateTick()
+				self.chainedTicks[i] = self:CreateTick("ChainedTick" .. i)
 			end
 
 			self.chainedTicks[i]:SetSize(2, self.castBarInformation.height * 0.9)
@@ -383,7 +385,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 						self.Warning:Show()
 						self.massDisintegrateStacks = self.massDisintegrateStacks - 1
 
-						if self.castBarInformation.anchor.Text then
+						if self.castBarInformation.anchor.Text ~= nil then
 							self.castBarInformation.anchor.Text:SetText(C_Spell.GetSpellName(436335))
 						end
 					end
@@ -408,25 +410,20 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 					local offset = (self.castBarInformation.width - initialOffset) / (self.maxTicks - 1)
 
 					for i = 1, self.maxChainedTickMarks do
-						self.chainedTicks[i]:ClearAllPoints()
+						local tick = self.chainedTicks[i]
+						tick:ClearAllPoints()
 
 						if i == 1 then
 							if initialOffset > 0 then
-								self.chainedTicks[i]:Show()
+								tick:Show()
 							else
-								self.chainedTicks[i]:Hide()
+								tick:Hide()
 							end
 
-							self.chainedTicks[i]:SetPoint(
-								"CENTER",
-								self.castBarInformation.anchor,
-								"RIGHT",
-								-initialOffset,
-								0
-							)
+							tick:SetPoint("CENTER", self.castBarInformation.anchor, "RIGHT", -initialOffset, 0)
 						else
-							self.chainedTicks[i]:SetPoint("CENTER", self.chainedTicks[i - 1], "CENTER", -offset, 0)
-							self.chainedTicks[i]:Show()
+							tick:SetPoint("CENTER", self.chainedTicks[i - 1], "CENTER", -offset, 0)
+							tick:Show()
 						end
 					end
 
@@ -616,7 +613,8 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		local maxAttempts = 5
 
 		-- addon is a mess, can't properly detect where/when this gets created and it takes ages to load
-		local function HookCastBarWhenPresent()
+
+		ticker = C_Timer.NewTicker(1, function()
 			attempts = attempts + 1
 
 			if attempts > maxAttempts and ticker ~= nil then
@@ -640,9 +638,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 				frame:AdjustDimensions(width, height)
 				frame:UpdateAnchor(self.statusBar)
 			end)
-		end
-
-		ticker = C_Timer.NewTicker(1, HookCastBarWhenPresent)
+		end)
 	end
 
 	if
@@ -684,6 +680,42 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			local width, height = self:GetSize()
 			frame:AdjustDimensions(width, height)
 			frame:UpdateAnchor(self.castBar)
+		end)
+	end
+
+	if
+		C_AddOns.DoesAddOnExist("AzortharionUI")
+		and C_AddOns.IsAddOnLoadable("AzortharionUI")
+		and C_AddOns.IsAddOnLoaded("AzortharionUI")
+	then
+		---@type FunctionContainer|nil
+		local ticker = nil
+		local attempts = 0
+		local maxAttempts = 5
+
+		ticker = C_Timer.NewTicker(1, function()
+			attempts = attempts + 1
+
+			if attempts > maxAttempts and ticker ~= nil then
+				ticker:Cancel()
+				ticker = nil
+				return
+			end
+
+			if AUI_Castbar_player == nil then
+				return
+			end
+
+			if ticker ~= nil then
+				ticker:Cancel()
+				ticker = nil
+			end
+
+			hooksecurefunc(AUI_Castbar_player, "Show", function(self)
+				local width, height = self._castbar:GetSize()
+				frame:AdjustDimensions(width, height)
+				frame:UpdateAnchor(self._castbar)
+			end)
 		end)
 	end
 end)
