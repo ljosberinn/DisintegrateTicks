@@ -22,7 +22,7 @@ local addonName = ...
 
 EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	-- only Evokers, see classID here: https://wago.tools/db2/ChrSpecialization
-	if select(3, UnitClass("player")) ~= 13 then
+	if select(3, UnitClass("player")) ~= Constants.UICharacterClasses.Evoker then
 		return
 	end
 
@@ -464,7 +464,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		end
 	)
 
-	frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+	frame:RegisterUnitEvent("PLAYER_SPECIALIZATION_CHANGED", "player")
 	frame:RegisterEvent("LOADING_SCREEN_DISABLED")
 	frame:RegisterSpecSpecificEvents()
 
