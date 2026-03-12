@@ -718,4 +718,40 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			end)
 		end)
 	end
+
+	if
+		C_AddOns.DoesAddOnExist("EllesmereUI")
+		and C_AddOns.IsAddOnLoadable("EllesmereUI")
+		and C_AddOns.IsAddOnLoaded("EllesmereUI")
+	then
+		---@type FunctionContainer|nil
+		local ticker = nil
+		local attempts = 0
+		local maxAttempts = 5
+
+		ticker = C_Timer.NewTicker(1, function()
+			attempts = attempts + 1
+
+			if attempts > maxAttempts and ticker ~= nil then
+				ticker:Cancel()
+				ticker = nil
+				return
+			end
+
+			if ERB_CastBarFrame == nil then
+				return
+			end
+
+			if ticker ~= nil then
+				ticker:Cancel()
+				ticker = nil
+			end
+
+			hooksecurefunc(ERB_CastBarFrame, "Show", function(self)
+				local width, height = self._bar:GetSize()
+				frame:AdjustDimensions(width, height)
+				frame:UpdateAnchor(self._bar)
+			end)
+		end)
+	end
 end)
