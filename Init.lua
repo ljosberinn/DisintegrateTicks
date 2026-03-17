@@ -661,13 +661,22 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		C_AddOns.DoesAddOnExist("EnhanceQOL")
 		and C_AddOns.IsAddOnLoadable("EnhanceQOL")
 		and C_AddOns.IsAddOnLoaded("EnhanceQOL")
-		and EQOLPlayerCastBar
 	then
-		hooksecurefunc(EQOLPlayerCastBar, "Show", function(self)
-			local width, height = self:GetSize()
-			frame:AdjustDimensions(width, height)
-			frame:UpdateAnchor(self)
-		end)
+		if EQOLPlayerCastBar then
+			hooksecurefunc(EQOLPlayerCastBar, "Show", function(self)
+				local width, height = self:GetSize()
+				frame:AdjustDimensions(width, height)
+				frame:UpdateAnchor(self)
+			end)
+		end
+
+		if EQOLUFPlayerHealthCast then
+			hooksecurefunc(EQOLUFPlayerHealthCast, "Show", function(self)
+				local width, height = self:GetSize()
+				frame:AdjustDimensions(width, height)
+				frame:UpdateAnchor(self)
+			end)
+		end
 	end
 
 	if
