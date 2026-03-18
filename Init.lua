@@ -7,18 +7,23 @@ local addonName = ...
 ---@field anchor Frame
 
 ---@class DisintegrateTicksFrame : Frame
----@field ticks Texture[]
----@field chainedTicks Texture[]
----@field maxTickMarks number
----@field maxChainedTickMarks number
----@field channeling boolean
----@field chaining boolean
+---@field private ticks Texture[]
+---@field private maxTicks number
+---@field private channeling boolean
+---@field private massDisintegrateStacks number
+---@field private lastGainedStack number
+---@field private hasTipTheScalesActive boolean
 ---@field castBarInformation CastBarInformation
 ---@field RegisterSpecSpecificEvents fun(self: DisintegrateTicksFrame)
 ---@field UnregisterSpecSpecificEvents fun(self: DisintegrateTicksFrame)
 ---@field CreateTick fun(self: DisintegrateTicksFrame, name: string): Texture
----@field RebuildTickMarks fun(self: DisintegrateTicksFrame)
----@field GetHastedChannelDuration fun(self: DisintegrateTicksFrame): number
+---@field HideTicks fun(self: DisintegrateTicksFrame)
+---@field UpdateTicks fun(self: DisintegrateTicksFrame, castBarFrame: Frame, numTicks: number)
+---@field QueryTalentsAndHide fun(self: DisintegrateTicksFrame)
+---@field AdjustDimensions fun(self: DisintegrateTicksFrame, width: number, height: number)
+---@field UpdateAnchor fun(self: DisintegrateTicksFrame, newAnchor: Frame)
+---@field KnowsMassDisintegrate fun(self: DisintegrateTicksFrame): boolean
+---@field OnEvent fun(self: DisintegrateTicksFrame, event: WowEvent, ...: any)
 
 EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	-- only Evokers, see classID here: https://wago.tools/db2/ChrSpecialization
@@ -47,12 +52,11 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	---@class DisintegrateTicksFrame
 	local frame = CreateFrame("Frame", "DisintegrateTicksFrame")
 	frame.ticks = {}
-	frame.chainedTicks = {}
-	frame.maxTickMarks = 2
-	frame.maxChainedTickMarks = 3
-	frame.lastStart = 0
+	frame.maxTicks = 4
 	frame.channeling = false
-	frame.chaining = false
+	frame.massDisintegrateStacks = 0
+	frame.lastGainedStack = 0
+	frame.hasTipTheScalesActive = false
 	frame.castBarInformation = {
 		width = 0,
 		height = 0,
@@ -71,13 +75,8 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 
 	frame.Warning:Hide()
 
-	frame.massDisintegrateStacks = 0
-	frame.lastGainedStack = 0
-	frame.hasTipTheScalesActive = false
-
 	function frame:RegisterSpecSpecificEvents()
 		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
-		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_UPDATE", "player")
 		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
 		self:RegisterUnitEvent("UNIT_SPELLCAST_EMPOWER_STOP", "player")
 		self:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
@@ -89,7 +88,6 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 
 	function frame:UnregisterSpecSpecificEvents()
 		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_START")
-		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
 		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
 		self:UnregisterEvent("UNIT_SPELLCAST_EMPOWER_STOP")
 		self:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
@@ -107,8 +105,6 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			or spellId == 382411 -- font of magic eternity surge
 	end
 
-	---@param name string
-	---@return Texture
 	function frame:CreateTick(name)
 		local tick = self.castBarInformation.anchor:CreateTexture(name, "OVERLAY")
 
@@ -121,6 +117,32 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		tick:Hide()
 
 		return tick
+	end
+
+	function frame:HideTicks()
+		for _, tick in next, self.ticks do
+			tick:Hide()
+		end
+	end
+
+	function frame:UpdateTicks(castBarFrame, amountOfTicks)
+		self:HideTicks()
+
+		local spacing = self.castBarInformation.width / amountOfTicks
+
+		for i = 1, amountOfTicks - 1 do
+			local tick = self.ticks[i]
+
+			if tick == nil or tick:GetParent() ~= castBarFrame then
+				tick = self:CreateTick("DisintegrateTick" .. i)
+				self.ticks[i] = tick
+			end
+
+			tick:SetSize(2, self.castBarInformation.height * 0.95)
+			tick:ClearAllPoints()
+			tick:SetPoint("CENTER", castBarFrame, "LEFT", spacing * i, 0)
+			tick:Show()
+		end
 	end
 
 	function frame:SetTickColor(r, g, b, a)
@@ -139,10 +161,6 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 
 		for i = 1, #self.ticks do
 			self.ticks[i]:SetColorTexture(color.r, color.g, color.b, color.a)
-		end
-
-		for i = 1, #self.chainedTicks do
-			self.chainedTicks[i]:SetColorTexture(color.r, color.g, color.b, color.a)
 		end
 
 		print(
@@ -253,43 +271,11 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		)
 	end
 
-	function frame:RebuildTickMarks()
+	function frame:QueryTalentsAndHide()
 		self.maxTicks = C_SpellBook.IsSpellKnown(1219723) and 5 or 4
-		self.baseDuration = 3 * (C_SpellBook.IsSpellKnown(369913) and 0.8 or 1)
-		self.maxTickMarks = self.maxTicks - 2
-		self.maxChainedTickMarks = self.maxTickMarks + 1
-
-		local offset = self.castBarInformation.width / (self.maxTicks - 1)
-
-		for i = 1, self.maxTickMarks do
-			if not self.ticks[i] or self.ticks[i]:GetParent() ~= self.castBarInformation.anchor then
-				self.ticks[i] = self:CreateTick("DefaultTick" .. i)
-			end
-
-			self.ticks[i]:SetSize(2, self.castBarInformation.height * 0.9)
-			self.ticks[i]:ClearAllPoints()
-			self.ticks[i]:SetPoint("CENTER", self.castBarInformation.anchor, "RIGHT", -(i * offset), 0)
-			self.ticks[i]:Hide()
-		end
-
-		for i = 1, self.maxChainedTickMarks do
-			if not self.chainedTicks[i] or self.chainedTicks[i]:GetParent() ~= self.castBarInformation.anchor then
-				self.chainedTicks[i] = self:CreateTick("ChainedTick" .. i)
-			end
-
-			self.chainedTicks[i]:SetSize(2, self.castBarInformation.height * 0.9)
-			self.chainedTicks[i]:Hide()
-		end
+		self:HideTicks()
 	end
 
-	function frame:GetHastedChannelDuration()
-		local haste = 1 + UnitSpellHaste("player") / 100
-
-		return self.baseDuration / haste
-	end
-
-	---@param width number
-	---@param height number
 	function frame:AdjustDimensions(width, height)
 		width = math.ceil(width)
 		height = math.ceil(height)
@@ -297,172 +283,107 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		if width ~= self.castBarInformation.width or height ~= self.castBarInformation.height then
 			self.castBarInformation.width = width
 			self.castBarInformation.height = height
-			self:RebuildTickMarks()
+			self:QueryTalentsAndHide()
 		end
 	end
 
-	---@param newAnchor Frame
 	function frame:UpdateAnchor(newAnchor)
 		if self.castBarInformation.anchor == newAnchor then
 			return
 		end
 
 		self.castBarInformation.anchor = newAnchor
-		self:RebuildTickMarks()
+		self:QueryTalentsAndHide()
 		self:MaybeUpdateWarningPosition()
 	end
 
-	---@return boolean
 	function frame:KnowsMassDisintegrate()
 		return C_SpellBook.IsSpellKnownOrInSpellBook(436335)
 	end
 
-	frame:MaybeUpdateWarningPosition()
+	function frame:OnEvent(event, ...)
+		if event == "LOADING_SCREEN_DISABLED" then
+			self:QueryTalentsAndHide()
+		elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
+			---@type number
+			local currentSpecId = PlayerUtil.GetCurrentSpecID()
 
-	frame:SetScript(
-		"OnEvent",
-		---@param self DisintegrateTicksFrame
-		---@param event WowEvent
-		function(self, event, ...)
-			if event == "LOADING_SCREEN_DISABLED" then
-				self:RebuildTickMarks()
-			elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
-				---@type number
-				local currentSpecId = PlayerUtil.GetCurrentSpecID()
+			-- only devastation and preservation. see ID columns here: https://wago.tools/db2/ChrSpecialization
+			if currentSpecId == 1467 or currentSpecId == 1468 then
+				self:RegisterSpecSpecificEvents()
+				self:QueryTalentsAndHide()
+			else
+				self:UnregisterSpecSpecificEvents()
+			end
+		elseif event == "PLAYER_DEAD" then
+			self.massDisintegrateStacks = 0
+		elseif event == "TRAIT_CONFIG_UPDATED" then
+			self:QueryTalentsAndHide()
+		elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+			local unit, castGuid, spellId = ...
 
-				-- only devastation and preservation. see ID columns here: https://wago.tools/db2/ChrSpecialization
-				if currentSpecId == 1467 or currentSpecId == 1468 then
-					self:RegisterSpecSpecificEvents()
-					self:RebuildTickMarks()
-				else
-					self:UnregisterSpecSpecificEvents()
-				end
-			elseif event == "PLAYER_DEAD" then
-				self.massDisintegrateStacks = 0
-			elseif event == "TRAIT_CONFIG_UPDATED" then
-				self:RebuildTickMarks()
-			elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
-				local unit, castGuid, spellId = ...
-
-				if self.hasTipTheScalesActive and self:IsEmpower(spellId) and self:KnowsMassDisintegrate() then
-					self.hasTipTheScalesActive = false
-					self.massDisintegrateStacks = self.massDisintegrateStacks + 1
-					self.lastGainedStack = GetTime()
-				end
-			elseif event == "UNIT_SPELLCAST_EMPOWER_STOP" then
-				local unit, castGuid, spellId, complete, interruptedBy, castBarId = ...
-
-				if not complete or not self:IsEmpower(spellId) == nil or not self:KnowsMassDisintegrate() then
-					return
-				end
-
+			if self.hasTipTheScalesActive and self:IsEmpower(spellId) and self:KnowsMassDisintegrate() then
+				self.hasTipTheScalesActive = false
 				self.massDisintegrateStacks = self.massDisintegrateStacks + 1
 				self.lastGainedStack = GetTime()
-			elseif event == "UNIT_SPELLCAST_CHANNEL_START" or event == "UNIT_SPELLCAST_CHANNEL_UPDATE" then
-				-- ignore other channels such as Fishing or quest-related casts
-				if select(3, ...) ~= 356995 then
-					return
-				end
-
-				local now = GetTime()
-
-				if now - self.lastStart < 0.5 then
-					return
-				end
-
-				self.lastStart = now
-
-				if
-					DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled
-					and event == "UNIT_SPELLCAST_CHANNEL_START"
-					and self.massDisintegrateStacks > 0
-				then
-					local expired = now - self.lastGainedStack > 15
-
-					if expired then
-						self.massDisintegrateStacks = 0
-					else
-						self.Warning:Show()
-						self.massDisintegrateStacks = self.massDisintegrateStacks - 1
-
-						if self.castBarInformation.anchor.Text ~= nil then
-							self.castBarInformation.anchor.Text:SetText(C_Spell.GetSpellName(436335))
-						end
-					end
-				else
-					self.Warning:Hide()
-				end
-
-				if self.channeling then
-					if not self.chaining then
-						for i = 1, self.maxTickMarks do
-							self.ticks[i]:Hide()
-						end
-					end
-
-					-- local name, displayName, textureID, startTimeMs, endTimeMs, isTradeskill, notInterruptible, spellID, isEmpowered, numEmpowerStages
-					local _, _, _, startTimeMs, endTimeMs = UnitChannelInfo("player")
-
-					local duration = (endTimeMs - startTimeMs) / 1000
-					local relativeInitialTickDuration = 1 - (self:GetHastedChannelDuration() / duration)
-
-					local initialOffset = self.castBarInformation.width * relativeInitialTickDuration
-					local offset = (self.castBarInformation.width - initialOffset) / (self.maxTicks - 1)
-
-					for i = 1, self.maxChainedTickMarks do
-						local tick = self.chainedTicks[i]
-						tick:ClearAllPoints()
-
-						if i == 1 then
-							if initialOffset > 0 then
-								tick:Show()
-							else
-								tick:Hide()
-							end
-
-							tick:SetPoint("CENTER", self.castBarInformation.anchor, "RIGHT", -initialOffset, 0)
-						else
-							tick:SetPoint("CENTER", self.chainedTicks[i - 1], "CENTER", -offset, 0)
-							tick:Show()
-						end
-					end
-
-					self.chaining = true
-				else
-					for i = 1, self.maxTickMarks do
-						self.ticks[i]:Show()
-					end
-
-					self.channeling = true
-				end
-			elseif event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW" then
-				local spellId = ...
-
-				if not self.hasTipTheScalesActive and self:IsEmpower(spellId) then
-					self.hasTipTheScalesActive = true
-				end
-			elseif event == "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE" then
-				local spellId = ...
-
-				if self.hasTipTheScalesActive and self:IsEmpower(spellId) then
-					self.hasTipTheScalesActive = false
-				end
-			elseif event == "UNIT_SPELLCAST_CHANNEL_STOP" then
-				self.Warning:Hide()
-
-				for i = 1, #self.ticks do
-					self.ticks[i]:Hide()
-				end
-
-				for i = 1, #self.chainedTicks do
-					self.chainedTicks[i]:Hide()
-				end
-
-				self.channeling = false
-				self.chaining = false
 			end
+		elseif event == "UNIT_SPELLCAST_EMPOWER_STOP" then
+			local unit, castGuid, spellId, complete, interruptedBy, castBarId = ...
+
+			if not complete or not self:IsEmpower(spellId) == nil or not self:KnowsMassDisintegrate() then
+				return
+			end
+
+			self.massDisintegrateStacks = self.massDisintegrateStacks + 1
+			self.lastGainedStack = GetTime()
+		elseif event == "UNIT_SPELLCAST_CHANNEL_START" then
+			-- ignore other channels such as Fishing or quest-related casts
+			if select(3, ...) ~= 356995 then
+				return
+			end
+
+			local now = GetTime()
+
+			if DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled and self.massDisintegrateStacks > 0 then
+				local expired = now - self.lastGainedStack > 15
+
+				if expired then
+					self.massDisintegrateStacks = 0
+				else
+					self.Warning:Show()
+					self.massDisintegrateStacks = self.massDisintegrateStacks - 1
+
+					if self.castBarInformation.anchor.Text ~= nil then
+						self.castBarInformation.anchor.Text:SetText(C_Spell.GetSpellName(436335))
+					end
+				end
+			else
+				self.Warning:Hide()
+			end
+
+			self:UpdateTicks(self.castBarInformation.anchor, self.channeling and self.maxTicks or (self.maxTicks - 1))
+			self.channeling = true
+		elseif event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW" then
+			local spellId = ...
+
+			if not self.hasTipTheScalesActive and self:IsEmpower(spellId) then
+				self.hasTipTheScalesActive = true
+			end
+		elseif event == "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE" then
+			local spellId = ...
+
+			if self.hasTipTheScalesActive and self:IsEmpower(spellId) then
+				self.hasTipTheScalesActive = false
+			end
+		elseif event == "UNIT_SPELLCAST_CHANNEL_STOP" then
+			self.Warning:Hide()
+			self:HideTicks()
+			self.channeling = false
 		end
-	)
+	end
+
+	frame:MaybeUpdateWarningPosition()
+	frame:SetScript("OnEvent", frame.OnEvent)
 
 	frame:RegisterUnitEvent("PLAYER_SPECIALIZATION_CHANGED", "player")
 	frame:RegisterEvent("LOADING_SCREEN_DISABLED")
@@ -502,8 +423,8 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			frame:AdjustDimensions(width, height)
 
 			-- fake restart the channel with a blank slate if the first cast initializing the bar was a channel
-			if frame.isChanneling then
-				frame.isChanneling = false
+			if frame.channeling then
+				frame.channeling = false
 				local script = frame:GetScript("OnEvent")
 				script(frame, "UNIT_SPELLCAST_CHANNEL_START")
 			end
@@ -530,7 +451,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			end)
 		end
 
-		-- never saw this branch in sactice but just to be safe
+		-- never saw this branch in practice but just to be safe
 		if NephUICastBar ~= nil then
 			SetupNephUICastBar()
 			return
