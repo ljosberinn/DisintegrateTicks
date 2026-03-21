@@ -10,6 +10,10 @@ local addonName = ...
 ---@field private ticks Texture[]
 ---@field private maxTicks number
 ---@field private channeling boolean
+---@field private chaining boolean
+---@field private lastStart number
+---@field private firstTick number
+---@field private prevEndTime number|nil
 ---@field private massDisintegrateStacks number
 ---@field private lastGainedStack number
 ---@field private hasTipTheScalesActive boolean
@@ -18,7 +22,7 @@ local addonName = ...
 ---@field UnregisterSpecSpecificEvents fun(self: DisintegrateTicksFrame)
 ---@field CreateTick fun(self: DisintegrateTicksFrame, name: string): Texture
 ---@field HideTicks fun(self: DisintegrateTicksFrame)
----@field UpdateTicks fun(self: DisintegrateTicksFrame, castBarFrame: Frame, numTicks: number)
+---@field UpdateTicks fun(self: DisintegrateTicksFrame, castBarFrame: Frame, duration: number)
 ---@field QueryTalentsAndHide fun(self: DisintegrateTicksFrame)
 ---@field AdjustDimensions fun(self: DisintegrateTicksFrame, width: number, height: number)
 ---@field UpdateAnchor fun(self: DisintegrateTicksFrame, newAnchor: Frame)
@@ -54,6 +58,9 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	frame.ticks = {}
 	frame.maxTicks = 4
 	frame.channeling = false
+	frame.chaining = false
+	frame.lastStart = 0
+	frame.firstTick = 0
 	frame.massDisintegrateStacks = 0
 	frame.lastGainedStack = 0
 	frame.hasTipTheScalesActive = false
@@ -77,6 +84,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 
 	function frame:RegisterSpecSpecificEvents()
 		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
+		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_UPDATE", "player")
 		self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
 		self:RegisterUnitEvent("UNIT_SPELLCAST_EMPOWER_STOP", "player")
 		self:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
@@ -88,6 +96,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 
 	function frame:UnregisterSpecSpecificEvents()
 		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_START")
+		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
 		self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
 		self:UnregisterEvent("UNIT_SPELLCAST_EMPOWER_STOP")
 		self:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
@@ -125,12 +134,33 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		end
 	end
 
-	function frame:UpdateTicks(castBarFrame, amountOfTicks)
+	function frame:GetHaste()
+		return 1 + UnitSpellHaste("player") / 100
+	end
+
+	function frame:GetTickInterval()
+		local base = 1
+
+		-- azure celerity reduces tick interval by 25%
+		if C_SpellBook.IsSpellKnown(1219723) then
+			base = base * 0.75
+		end
+
+		-- natural convergence reduces total cast time (and thus tick interval) by 20%
+		if C_SpellBook.IsSpellKnown(369913) then
+			base = base * 0.8
+		end
+
+		return base
+	end
+
+	function frame:UpdateTicks(castBarFrame, duration)
 		self:HideTicks()
 
-		local spacing = self.castBarInformation.width / amountOfTicks
+		local hastedTickInterval = self:GetTickInterval() / self:GetHaste()
+		local pixelsPerSecond = self.castBarInformation.width / duration
 
-		for i = 1, amountOfTicks - 1 do
+		for i = 1, self.maxTicks do
 			local tick = self.ticks[i]
 
 			if tick == nil or tick:GetParent() ~= castBarFrame then
@@ -140,8 +170,21 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 
 			tick:SetSize(2, self.castBarInformation.height * 0.95)
 			tick:ClearAllPoints()
-			tick:SetPoint("CENTER", castBarFrame, "LEFT", spacing * i, 0)
-			tick:Show()
+
+			local tickTime = i * hastedTickInterval
+
+			if self.chaining then
+				local interval = (duration - self.firstTick) / (self.maxTicks - 1)
+				tickTime = self.firstTick + (i - 1) * interval
+			end
+
+			tick:SetPoint("CENTER", castBarFrame, "LEFT", (duration - tickTime) * pixelsPerSecond, 0)
+
+			if tickTime < duration * 0.99 then
+				tick:Show()
+			else
+				tick:Hide()
+			end
 		end
 	end
 
@@ -336,16 +379,35 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 
 			self.massDisintegrateStacks = self.massDisintegrateStacks + 1
 			self.lastGainedStack = GetTime()
+		elseif event == "UNIT_SPELLCAST_CHANNEL_UPDATE" then
+			if select(3, ...) ~= 356995 then
+				return
+			end
+
+			local endTimeMS = select(5, UnitChannelInfo("player"))
+
+			if endTimeMS ~= nil then
+				self.prevEndTime = endTimeMS / 1000
+			end
 		elseif event == "UNIT_SPELLCAST_CHANNEL_START" then
 			-- ignore other channels such as Fishing or quest-related casts
 			if select(3, ...) ~= 356995 then
 				return
 			end
 
-			local now = GetTime()
+			local _, _, _, startTimeMS, endTimeMS = UnitChannelInfo("player")
+			local startTime = startTimeMS / 1000
+
+			-- e.g. casting hover during disint triggers another channel start
+			-- but the end time will be within a server tick of the already-ongoing cast
+			if startTime - self.lastStart < 0.5 then
+				return
+			end
+
+			self.lastStart = startTime
 
 			if DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled and self.massDisintegrateStacks > 0 then
-				local expired = now - self.lastGainedStack > 15
+				local expired = GetTime() - self.lastGainedStack > 15
 
 				if expired then
 					self.massDisintegrateStacks = 0
@@ -361,8 +423,19 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 				self.Warning:Hide()
 			end
 
-			self:UpdateTicks(self.castBarInformation.anchor, self.channeling and self.maxTicks or (self.maxTicks - 1))
+			local nextEndTime = endTimeMS / 1000
+
+			self.firstTick = 0
+
+			if self.channeling and self.prevEndTime then
+				self.firstTick = math.max(0, self.prevEndTime - startTime)
+			end
+
+			self.prevEndTime = nextEndTime
+			self.chaining = self.channeling
 			self.channeling = true
+
+			self:UpdateTicks(self.castBarInformation.anchor, nextEndTime - startTime)
 		elseif event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW" then
 			local spellId = ...
 
@@ -376,9 +449,14 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 				self.hasTipTheScalesActive = false
 			end
 		elseif event == "UNIT_SPELLCAST_CHANNEL_STOP" then
+			if select(3, ...) ~= 356995 then
+				return
+			end
+
 			self.Warning:Hide()
 			self:HideTicks()
 			self.channeling = false
+			self.chaining = false
 		end
 	end
 
