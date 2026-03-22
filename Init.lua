@@ -14,6 +14,7 @@ local addonName = ...
 ---@field private lastStart number
 ---@field private firstTick number
 ---@field private prevEndTime number|nil
+---@field private prevHastedTickInterval number|nil
 ---@field private massDisintegrateStacks number
 ---@field private lastGainedStack number
 ---@field private hasTipTheScalesActive boolean
@@ -61,6 +62,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	frame.chaining = false
 	frame.lastStart = 0
 	frame.firstTick = 0
+	frame.prevHastedTickInterval = nil
 	frame.massDisintegrateStacks = 0
 	frame.lastGainedStack = 0
 	frame.hasTipTheScalesActive = false
@@ -424,14 +426,18 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			end
 
 			local nextEndTime = endTimeMS / 1000
+			local hastedTickInterval = self:GetTickInterval() / self:GetHaste()
 
 			self.firstTick = 0
 
-			if self.channeling and self.prevEndTime then
-				self.firstTick = math.max(0, self.prevEndTime - startTime)
+			if self.channeling and self.prevEndTime and self.prevHastedTickInterval then
+				local remaining = self.prevEndTime - startTime
+				-- modulo gives time to the next tick that would've fired, not just the last
+				self.firstTick = math.max(0, math.fmod(remaining, self.prevHastedTickInterval))
 			end
 
 			self.prevEndTime = nextEndTime
+			self.prevHastedTickInterval = hastedTickInterval
 			self.chaining = self.channeling
 			self.channeling = true
 
