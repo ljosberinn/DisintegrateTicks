@@ -14,7 +14,7 @@ local addonName = ...
 ---@field private lastStart number
 ---@field private firstTick number
 ---@field private prevEndTime number|nil
----@field private prevHastedTickInterval number|nil
+---@field private prevTickInterval number|nil
 ---@field private massDisintegrateStacks number
 ---@field private lastGainedStack number
 ---@field private hasTipTheScalesActive boolean
@@ -62,7 +62,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	frame.chaining = false
 	frame.lastStart = 0
 	frame.firstTick = 0
-	frame.prevHastedTickInterval = nil
+	frame.prevTickInterval = nil
 	frame.massDisintegrateStacks = 0
 	frame.lastGainedStack = 0
 	frame.hasTipTheScalesActive = false
@@ -136,10 +136,6 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		end
 	end
 
-	function frame:GetHaste()
-		return 1 + UnitSpellHaste("player") / 100
-	end
-
 	function frame:GetTickInterval()
 		local base = 1
 
@@ -159,7 +155,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	function frame:UpdateTicks(castBarFrame, duration)
 		self:HideTicks()
 
-		local hastedTickInterval = self:GetTickInterval() / self:GetHaste()
+		local tickInterval = self:GetTickInterval()
 		local pixelsPerSecond = self.castBarInformation.width / duration
 
 		for i = 1, self.maxTicks do
@@ -173,7 +169,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			tick:SetSize(2, self.castBarInformation.height * 0.95)
 			tick:ClearAllPoints()
 
-			local tickTime = i * hastedTickInterval
+			local tickTime = i * tickInterval
 
 			if self.chaining then
 				local interval = (duration - self.firstTick) / (self.maxTicks - 1)
@@ -426,18 +422,18 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			end
 
 			local nextEndTime = endTimeMS / 1000
-			local hastedTickInterval = self:GetTickInterval() / self:GetHaste()
+			local tickInterval = self:GetTickInterval()
 
 			self.firstTick = 0
 
-			if self.channeling and self.prevEndTime and self.prevHastedTickInterval then
+			if self.channeling and self.prevEndTime and self.prevTickInterval then
 				local remaining = self.prevEndTime - startTime
 				-- modulo gives time to the next tick that would've fired, not just the last
-				self.firstTick = math.max(0, math.fmod(remaining, self.prevHastedTickInterval))
+				self.firstTick = math.max(0, math.fmod(remaining, self.prevTickInterval))
 			end
 
 			self.prevEndTime = nextEndTime
-			self.prevHastedTickInterval = hastedTickInterval
+			self.prevTickInterval = tickInterval
 			self.chaining = self.channeling
 			self.channeling = true
 
