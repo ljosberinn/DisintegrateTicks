@@ -18,6 +18,7 @@ local addonName = ...
 ---@field private massDisintegrateStacks number
 ---@field private lastGainedStack number
 ---@field private hasTipTheScalesActive boolean
+---@field private lastKnownHaste number
 ---@field castBarInformation CastBarInformation
 ---@field RegisterSpecSpecificEvents fun(self: DisintegrateTicksFrame)
 ---@field UnregisterSpecSpecificEvents fun(self: DisintegrateTicksFrame)
@@ -66,12 +67,12 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	frame.massDisintegrateStacks = 0
 	frame.lastGainedStack = 0
 	frame.hasTipTheScalesActive = false
+	frame.lastKnownHaste = 0
 	frame.castBarInformation = {
 		width = 0,
 		height = 0,
 		anchor = PlayerCastingBarFrame,
 	}
-
 	frame.Warning = frame:CreateFontString(nil, "OVERLAY")
 	frame.Warning:SetFont("Fonts\\FRIZQT__.TTF", DisintegrateTicksSaved.MassDisintegrateClipWarning.fontSize, "OUTLINE")
 	frame.Warning:SetText(DisintegrateTicksSaved.MassDisintegrateClipWarning.text)
@@ -136,8 +137,21 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		end
 	end
 
-	function frame:GetHaste()
-		return 1 + UnitSpellHaste("player") / 100
+	function frame:GetHaste(actualDuration)
+		if actualDuration ~= nil then
+			local baseDuration = 3.0
+
+			if C_SpellBook.IsSpellKnown(369913) then
+				baseDuration = baseDuration * 0.8
+			end
+
+			local hasteMultiplier = baseDuration / actualDuration
+			self.lastKnownHaste = (hasteMultiplier - 1) * 100
+
+			return hasteMultiplier
+		end
+
+		return 1 + self.lastKnownHaste / 100
 	end
 
 	function frame:GetTickInterval()
@@ -426,7 +440,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			end
 
 			local nextEndTime = endTimeMS / 1000
-			local hastedTickInterval = self:GetTickInterval() / self:GetHaste()
+			local hastedTickInterval = self:GetTickInterval() / self:GetHaste(nextEndTime - startTime)
 
 			self.firstTick = 0
 
