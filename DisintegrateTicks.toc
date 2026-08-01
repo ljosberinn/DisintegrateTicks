@@ -1,4 +1,4 @@
-## Interface: 120007
+## Interface: 120007, 120100
 ## Title: Disintegrate Ticks
 ## Author: Xephyris, Vollmer
 ## Version: @project-version@
