@@ -83,9 +83,6 @@ Alpha is optional and will default to 1.
 
 ### Supported Cast Bars
 
-- NephUI
-- UnhaltedUnitFrames
-- BetterCooldownManager
 - MidnightSimpleUnitFrames
 - ActionBarsEnhanced
 - EnhanceQOL
