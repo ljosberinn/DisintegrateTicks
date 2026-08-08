@@ -1,14 +1,38 @@
 ---@type string
 local addonName = ...
 
----@class CastBarInformation
+---@class CastBarHandle
+---@field id string
+---@field anchor Frame
+---@field textFrame FontString|nil
 ---@field width number
 ---@field height number
----@field anchor Frame
+---@field priority number
+---@field ticks Texture[]
+---@field isActive (fun(self: CastBarHandle): boolean)|nil provider-specific check beyond `:IsShown()`
+
+---@class CastBarProvider
+---@field id string
+---@field addon string|nil
+---@field priority number
+---@field isEnabled fun(): boolean
+---@field register fun(registry: CastBarRegistry, frame: DisintegrateTicksFrame)
+
+---@class CastBarRegistry
+---@field providers CastBarProvider[]
+---@field handles table<string, CastBarHandle>
+---@field RegisterProvider fun(self: CastBarRegistry, provider: CastBarProvider)
+---@field EnsureHandle fun(self: CastBarRegistry, id: string, anchor: Frame, priority: number, textFrame: FontString|nil): CastBarHandle
+---@field GetHandle fun(self: CastBarRegistry, id: string): CastBarHandle|nil
+---@field SyncDimensions fun(self: CastBarRegistry, id: string, anchor: Frame)
+---@field GetVisibleBars fun(self: CastBarRegistry): CastBarHandle[]
+---@field GetPrimaryHandle fun(self: CastBarRegistry): CastBarHandle|nil
+---@field ResolveWithRetry fun(self: CastBarRegistry, resolve: fun(): Frame|nil, callback: fun(anchor: Frame), maxAttempts: number?, interval: number?)
+---@field frame DisintegrateTicksFrame
 
 ---@class DisintegrateTicksFrame : Frame
----@field private ticks Texture[]
 ---@field private maxTicks number
+---@field private activeChannelDuration number|nil
 ---@field private channeling boolean
 ---@field private chaining boolean
 ---@field private lastStart number
@@ -19,15 +43,18 @@ local addonName = ...
 ---@field private lastGainedStack number
 ---@field private hasTipTheScalesActive boolean
 ---@field private lastKnownHaste number
----@field castBarInformation CastBarInformation
+---@field primaryHandle CastBarHandle|nil
 ---@field RegisterSpecSpecificEvents fun(self: DisintegrateTicksFrame)
 ---@field UnregisterSpecSpecificEvents fun(self: DisintegrateTicksFrame)
----@field CreateTick fun(self: DisintegrateTicksFrame, name: string): Texture
----@field HideTicks fun(self: DisintegrateTicksFrame)
----@field UpdateTicks fun(self: DisintegrateTicksFrame, castBarFrame: Frame, duration: number)
+---@field CreateTick fun(self: DisintegrateTicksFrame, handle: CastBarHandle): Texture
+---@field HideTicks fun(self: DisintegrateTicksFrame, handle: CastBarHandle|nil)
+---@field UpdateHandleTicks fun(self: DisintegrateTicksFrame, handle: CastBarHandle, duration: number)
+---@field UpdateTicksAll fun(self: DisintegrateTicksFrame, duration: number)
 ---@field QueryTalentsAndHide fun(self: DisintegrateTicksFrame)
----@field AdjustDimensions fun(self: DisintegrateTicksFrame, width: number, height: number)
----@field UpdateAnchor fun(self: DisintegrateTicksFrame, newAnchor: Frame)
+---@field UpdateHandleDimensions fun(self: DisintegrateTicksFrame, id: string, width: number, height: number)
+---@field RefreshPrimaryHandle fun(self: DisintegrateTicksFrame)
+---@field OnCastBarShown fun(self: DisintegrateTicksFrame, id: string, anchor: Frame, textFrame: FontString|nil, priority: number)
+---@field OnCastBarHidden fun(self: DisintegrateTicksFrame, id: string)
 ---@field KnowsMassDisintegrate fun(self: DisintegrateTicksFrame): boolean
 ---@field OnEvent fun(self: DisintegrateTicksFrame, event: WowEvent, ...: any)
 
@@ -36,6 +63,162 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	if select(3, UnitClass("player")) ~= Constants.UICharacterClasses.Evoker then
 		return
 	end
+
+	---@type CastBarRegistry
+	local CastBarRegistry = {
+		providers = {},
+		handles = {},
+	}
+
+	function CastBarRegistry:RegisterProvider(provider)
+		table.insert(self.providers, provider)
+
+		if provider.isEnabled() then
+			provider.register(self, self.frame)
+		elseif provider.addon ~= nil then
+			EventUtil.ContinueOnAddOnLoaded(provider.addon, function()
+				if provider.isEnabled() then
+					provider.register(self, self.frame)
+				end
+			end)
+		end
+	end
+
+	---@return CastBarHandle
+	function CastBarRegistry:EnsureHandle(id, anchor, priority, textFrame)
+		local handle = self.handles[id]
+
+		if handle == nil then
+			handle = {
+				id = id,
+				anchor = anchor,
+				textFrame = textFrame,
+				width = 0,
+				height = 0,
+				priority = priority,
+				ticks = {},
+			}
+			self.handles[id] = handle
+		else
+			handle.anchor = anchor
+			handle.textFrame = textFrame
+			handle.priority = priority
+		end
+
+		return handle
+	end
+
+	---@return CastBarHandle|nil
+	function CastBarRegistry:GetHandle(id)
+		return self.handles[id]
+	end
+
+	function CastBarRegistry:SyncDimensions(id, anchor)
+		local handle = self:GetHandle(id)
+
+		if handle == nil or anchor == nil then
+			return
+		end
+
+		local width, height = anchor:GetSize()
+
+		self.frame:UpdateHandleDimensions(id, math.ceil(width), math.ceil(height))
+	end
+
+	-- all currently shown bars, highest priority first. two providers may resolve to the
+	-- same physical frame (e.g. ActionBarsEnhanced restyling the default bar), so dedupe by
+	-- frame pointer to avoid stacking duplicate ticks on top of each other.
+	---@return CastBarHandle[]
+	function CastBarRegistry:GetVisibleBars()
+		---@type CastBarHandle[]
+		local candidates = {}
+
+		for _, handle in pairs(self.handles) do
+			if handle.anchor ~= nil and handle.anchor:IsShown() then
+				if handle.isActive == nil or handle.isActive(handle) then
+					table.insert(candidates, handle)
+				end
+			end
+		end
+
+		table.sort(candidates, function(a, b)
+			if a.priority == b.priority then
+				return a.id < b.id
+			end
+
+			return a.priority > b.priority
+		end)
+
+		---@type CastBarHandle[]
+		local visible = {}
+		local seen = {}
+
+		for _, handle in ipairs(candidates) do
+			if not seen[handle.anchor] then
+				seen[handle.anchor] = true
+				table.insert(visible, handle)
+			end
+		end
+
+		return visible
+	end
+
+	---@return CastBarHandle|nil
+	function CastBarRegistry:GetPrimaryHandle()
+		local visible = self:GetVisibleBars()
+
+		if visible[1] ~= nil then
+			return visible[1]
+		end
+
+		local bestFallback = nil
+
+		for _, handle in pairs(self.handles) do
+			if handle.anchor ~= nil and (not bestFallback or handle.priority > bestFallback.priority) then
+				bestFallback = handle
+			end
+		end
+
+		return bestFallback
+	end
+
+	function CastBarRegistry:ResolveWithRetry(resolve, callback, maxAttempts, interval)
+		maxAttempts = maxAttempts or 5
+		interval = interval or 1
+
+		local immediate = resolve()
+
+		if immediate ~= nil then
+			callback(immediate)
+			return
+		end
+
+		local attempts = 0
+		---@type FunctionContainer|nil
+		local ticker = nil
+
+		ticker = C_Timer.NewTicker(interval, function()
+			attempts = attempts + 1
+
+			local anchor = resolve()
+
+			if anchor ~= nil then
+				if ticker ~= nil then
+					ticker:Cancel()
+				end
+
+				callback(anchor)
+				return
+			end
+
+			if attempts >= maxAttempts and ticker ~= nil then
+				ticker:Cancel()
+			end
+		end)
+	end
+
+	local massDisintegrateName = C_Spell.GetSpellName(436335)
+
 
 	DisintegrateTicksSaved = DisintegrateTicksSaved or {}
 
@@ -57,8 +240,9 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 
 	---@class DisintegrateTicksFrame
 	local frame = CreateFrame("Frame", "DisintegrateTicksFrame")
-	frame.ticks = {}
+	CastBarRegistry.frame = frame
 	frame.maxTicks = 4
+	frame.activeChannelDuration = nil
 	frame.channeling = false
 	frame.chaining = false
 	frame.lastStart = 0
@@ -68,11 +252,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	frame.lastGainedStack = 0
 	frame.hasTipTheScalesActive = false
 	frame.lastKnownHaste = 0
-	frame.castBarInformation = {
-		width = 0,
-		height = 0,
-		anchor = PlayerCastingBarFrame,
-	}
+	frame.primaryHandle = nil
 	frame.Warning = frame:CreateFontString(nil, "OVERLAY")
 	frame.Warning:SetFont("Fonts\\FRIZQT__.TTF", DisintegrateTicksSaved.MassDisintegrateClipWarning.fontSize, "OUTLINE")
 	frame.Warning:SetText(DisintegrateTicksSaved.MassDisintegrateClipWarning.text)
@@ -117,8 +297,8 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			or spellId == 382411 -- font of magic eternity surge
 	end
 
-	function frame:CreateTick(name)
-		local tick = self.castBarInformation.anchor:CreateTexture(name, "OVERLAY")
+	function frame:CreateTick(handle)
+		local tick = handle.anchor:CreateTexture(nil, "OVERLAY")
 
 		tick:SetColorTexture(
 			DisintegrateTicksSaved.Color[1],
@@ -131,9 +311,20 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		return tick
 	end
 
-	function frame:HideTicks()
-		for _, tick in next, self.ticks do
-			tick:Hide()
+	-- omitting the handle hides the ticks of every registered bar
+	function frame:HideTicks(handle)
+		if handle ~= nil then
+			for _, tick in next, handle.ticks do
+				tick:Hide()
+			end
+
+			return
+		end
+
+		for _, registered in pairs(CastBarRegistry.handles) do
+			for _, tick in next, registered.ticks do
+				tick:Hide()
+			end
 		end
 	end
 
@@ -170,21 +361,26 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		return base
 	end
 
-	function frame:UpdateTicks(castBarFrame, duration)
-		self:HideTicks()
+	function frame:UpdateHandleTicks(handle, duration)
+		if handle.anchor == nil or handle.width <= 0 or duration == nil or duration <= 0 then
+			return
+		end
+
+		self:HideTicks(handle)
 
 		local hastedTickInterval = self:GetTickInterval() / self:GetHaste()
-		local pixelsPerSecond = self.castBarInformation.width / duration
+		local pixelsPerSecond = handle.width / duration
 
 		for i = 1, self.maxTicks do
-			local tick = self.ticks[i]
+			local tick = handle.ticks[i]
 
-			if tick == nil or tick:GetParent() ~= castBarFrame then
-				tick = self:CreateTick("DisintegrateTick" .. i)
-				self.ticks[i] = tick
+			-- the bar frame may have been recreated by its provider, reparent by recreating
+			if tick == nil or tick:GetParent() ~= handle.anchor then
+				tick = self:CreateTick(handle)
+				handle.ticks[i] = tick
 			end
 
-			tick:SetSize(2, self.castBarInformation.height * 0.95)
+			tick:SetSize(2, handle.height * 0.95)
 			tick:ClearAllPoints()
 
 			local tickTime = i * hastedTickInterval
@@ -194,13 +390,27 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 				tickTime = self.firstTick + (i - 1) * interval
 			end
 
-			tick:SetPoint("CENTER", castBarFrame, "LEFT", (duration - tickTime) * pixelsPerSecond, 0)
+			tick:SetPoint("CENTER", handle.anchor, "LEFT", (duration - tickTime) * pixelsPerSecond, 0)
 
 			if tickTime < duration * 0.99 then
 				tick:Show()
 			else
 				tick:Hide()
 			end
+		end
+	end
+
+	function frame:UpdateTicksAll(duration)
+		if duration == nil or duration <= 0 then
+			return
+		end
+
+		self.activeChannelDuration = duration
+
+		self:HideTicks()
+
+		for _, handle in ipairs(CastBarRegistry:GetVisibleBars()) do
+			self:UpdateHandleTicks(handle, duration)
 		end
 	end
 
@@ -218,8 +428,10 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			DisintegrateTicksSaved.Color[4]
 		)
 
-		for i = 1, #self.ticks do
-			self.ticks[i]:SetColorTexture(color.r, color.g, color.b, color.a)
+		for _, handle in pairs(CastBarRegistry.handles) do
+			for _, tick in next, handle.ticks do
+				tick:SetColorTexture(color.r, color.g, color.b, color.a)
+			end
 		end
 
 		print(
@@ -270,11 +482,13 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	end
 
 	function frame:MaybeUpdateWarningPosition()
-		if DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled then
+		local anchor = self.primaryHandle and self.primaryHandle.anchor
+
+		if DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled and anchor ~= nil then
 			self.Warning:ClearAllPoints()
 			self.Warning:SetPoint(
 				DisintegrateTicksSaved.MassDisintegrateClipWarning.point,
-				self.castBarInformation.anchor,
+				anchor,
 				"CENTER",
 				DisintegrateTicksSaved.MassDisintegrateClipWarning.x,
 				DisintegrateTicksSaved.MassDisintegrateClipWarning.y
@@ -335,25 +549,56 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 		self:HideTicks()
 	end
 
-	function frame:AdjustDimensions(width, height)
-		width = math.ceil(width)
-		height = math.ceil(height)
+	function frame:UpdateHandleDimensions(id, width, height)
+		local handle = CastBarRegistry:GetHandle(id)
 
-		if width ~= self.castBarInformation.width or height ~= self.castBarInformation.height then
-			self.castBarInformation.width = width
-			self.castBarInformation.height = height
-			self:QueryTalentsAndHide()
-		end
-	end
-
-	function frame:UpdateAnchor(newAnchor)
-		if self.castBarInformation.anchor == newAnchor then
+		if handle == nil then
 			return
 		end
 
-		self.castBarInformation.anchor = newAnchor
-		self:QueryTalentsAndHide()
-		self:MaybeUpdateWarningPosition()
+		if width ~= handle.width or height ~= handle.height then
+			handle.width = width
+			handle.height = height
+
+			if self.channeling and self.activeChannelDuration ~= nil then
+				self:UpdateHandleTicks(handle, self.activeChannelDuration)
+			else
+				self:HideTicks(handle)
+			end
+		end
+	end
+
+	function frame:RefreshPrimaryHandle()
+		local primary = CastBarRegistry:GetPrimaryHandle()
+
+		if primary ~= nil and self.primaryHandle ~= primary then
+			self.primaryHandle = primary
+			self:MaybeUpdateWarningPosition()
+		end
+	end
+
+	function frame:OnCastBarShown(id, anchor, textFrame, priority)
+		CastBarRegistry:EnsureHandle(id, anchor, priority, textFrame)
+		CastBarRegistry:SyncDimensions(id, anchor)
+		self:RefreshPrimaryHandle()
+
+		if self.channeling and self.activeChannelDuration ~= nil then
+			local handle = CastBarRegistry:GetHandle(id)
+
+			if handle ~= nil then
+				self:UpdateHandleTicks(handle, self.activeChannelDuration)
+			end
+		end
+	end
+
+	function frame:OnCastBarHidden(id)
+		local handle = CastBarRegistry:GetHandle(id)
+
+		if handle ~= nil then
+			self:HideTicks(handle)
+		end
+
+		self:RefreshPrimaryHandle()
 	end
 
 	function frame:KnowsMassDisintegrate()
@@ -385,6 +630,10 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 				self.hasTipTheScalesActive = false
 				self.massDisintegrateStacks = self.massDisintegrateStacks + 1
 				self.lastGainedStack = GetTime()
+			end
+
+			if spellId == 358267 then
+				self:RefreshPrimaryHandle()
 			end
 		elseif event == "UNIT_SPELLCAST_EMPOWER_STOP" then
 			local unit, castGuid, spellId, complete, interruptedBy, castBarId = ...
@@ -422,18 +671,29 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 
 			self.lastStart = startTime
 
-			if DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled and self.massDisintegrateStacks > 0 then
+			self:RefreshPrimaryHandle()
+
+			if self.massDisintegrateStacks > 0 then
 				local expired = GetTime() - self.lastGainedStack > 15
 
 				if expired then
 					self.massDisintegrateStacks = 0
 				else
-					self.Warning:Show()
-					self.massDisintegrateStacks = self.massDisintegrateStacks - 1
+					local textFrame = self.primaryHandle and self.primaryHandle.textFrame
 
-					if self.castBarInformation.anchor.Text ~= nil then
-						self.castBarInformation.anchor.Text:SetText(C_Spell.GetSpellName(436335))
+					if textFrame ~= nil then
+						textFrame:SetText(massDisintegrateName)
 					end
+
+					if DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled then
+						self.Warning:Show()
+					end
+
+					self.massDisintegrateStacks = self.massDisintegrateStacks - 1
+				end
+
+				if not DisintegrateTicksSaved.MassDisintegrateClipWarning.enabled then
+					self.Warning:Hide()
 				end
 			else
 				self.Warning:Hide()
@@ -455,7 +715,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			self.chaining = self.channeling
 			self.channeling = true
 
-			self:UpdateTicks(self.castBarInformation.anchor, nextEndTime - startTime)
+			self:UpdateTicksAll(nextEndTime - startTime)
 		elseif event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW" then
 			local spellId = ...
 
@@ -477,6 +737,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 			self:HideTicks()
 			self.channeling = false
 			self.chaining = false
+			self.activeChannelDuration = nil
 		end
 	end
 
@@ -487,172 +748,218 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	frame:RegisterEvent("LOADING_SCREEN_DISABLED")
 	frame:RegisterSpecSpecificEvents()
 
-	hooksecurefunc(EditModeManagerFrame, "UpdateLayoutInfo", function(editModeManagerSelf)
-		local lockToPlayerFrame = PlayerCastingBarFrame:IsAttachedToPlayerFrame()
+	local function RegisterBlizzardCastBarProvider()
+		local blizzardId = "blizzard"
+		local overlayId = "blizzard_overlay"
 
-		frame:AdjustDimensions(lockToPlayerFrame and 150 or 208, lockToPlayerFrame and 10 or 11)
-	end)
+		local handle = CastBarRegistry:EnsureHandle(blizzardId, PlayerCastingBarFrame, 10, PlayerCastingBarFrame.Text)
 
+		-- a replacement bar may keep the frame shown while CastingBarMixin suppresses it,
+		-- see CastingBarMixin:UpdateShownState in Blizzard's CastingBarFrame.lua
+		---@class BlizzardCastBar : Frame
+		---@field showCastbar boolean|nil
+		handle.isActive = function(self)
+			local anchor = self.anchor
+			---@cast anchor BlizzardCastBar
+			return anchor.showCastbar ~= false and GameRulesUtil.ShouldShowPlayerCastBar()
+		end
 
-	if
-		C_AddOns.DoesAddOnExist("MidnightSimpleUnitFrames")
-		and C_AddOns.IsAddOnLoadable("MidnightSimpleUnitFrames")
-		and C_AddOns.IsAddOnLoaded("MidnightSimpleUnitFrames")
-	then
-		---@type FunctionContainer|nil
-		local ticker = nil
-		local attempts = 0
-		local maxAttempts = 5
+		frame:OnCastBarShown(blizzardId, PlayerCastingBarFrame, PlayerCastingBarFrame.Text, 10)
 
-		-- addon is a mess, can't properly detect where/when this gets created and it takes ages to load
-
-		ticker = C_Timer.NewTicker(1, function()
-			attempts = attempts + 1
-
-			if attempts > maxAttempts and ticker ~= nil then
-				ticker:Cancel()
-				ticker = nil
-				return
-			end
-
-			if MSUF_PlayerCastbar == nil then
-				return
-			end
-
-			if ticker ~= nil then
-				ticker:Cancel()
-				ticker = nil
-			end
-
-			hooksecurefunc(MSUF_PlayerCastbar, "Show", function(self)
-				local width, height = self:GetSize()
-
-				frame:AdjustDimensions(width, height)
-				frame:UpdateAnchor(self.statusBar)
-			end)
+		PlayerCastingBarFrame:HookScript("OnShow", function(self)
+			frame:OnCastBarShown(blizzardId, self, self.Text, 10)
 		end)
-	end
 
-	if
-		C_AddOns.DoesAddOnExist("ActionBarsEnhanced")
-		and C_AddOns.IsAddOnLoadable("ActionBarsEnhanced")
-		and C_AddOns.IsAddOnLoaded("ActionBarsEnhanced")
-	then
+		PlayerCastingBarFrame:HookScript("OnHide", function()
+			frame:OnCastBarHidden(blizzardId)
+		end)
+
 		PlayerCastingBarFrame:HookScript("OnSizeChanged", function(self)
-			if frame.castBarInformation.anchor ~= self then
-				return
-			end
-
-			local width, height = self:GetSize()
-
-			frame:AdjustDimensions(width, height)
+			CastBarRegistry:SyncDimensions(blizzardId, self)
 		end)
+
+		hooksecurefunc(PlayerCastingBarFrame, "SetLook", function(self)
+			CastBarRegistry:SyncDimensions(blizzardId, self)
+		end)
+
+		hooksecurefunc(EditModeManagerFrame, "UpdateLayoutInfo", function()
+			CastBarRegistry:SyncDimensions(blizzardId, PlayerCastingBarFrame)
+			frame:RefreshPrimaryHandle()
+		end)
+
+		EventRegistry:RegisterCallback("OverlayPlayerCastBar.OnShow", function()
+			frame:OnCastBarShown(
+				overlayId,
+				OverlayPlayerCastingBarFrame,
+				OverlayPlayerCastingBarFrame.Text,
+				12
+			)
+		end, frame)
+
+		EventRegistry:RegisterCallback("OverlayPlayerCastBar.OnHide", function()
+			frame:OnCastBarHidden(overlayId)
+		end, frame)
 	end
 
-	if
-		C_AddOns.DoesAddOnExist("EnhanceQOL")
-		and C_AddOns.IsAddOnLoadable("EnhanceQOL")
-		and C_AddOns.IsAddOnLoaded("EnhanceQOL")
-	then
-		if EQOLPlayerCastBar then
-			hooksecurefunc(EQOLPlayerCastBar, "Show", function(self)
-				local width, height = self:GetSize()
-				frame:AdjustDimensions(width, height)
-				frame:UpdateAnchor(self)
-			end)
-		end
+	CastBarRegistry:RegisterProvider({
+		id = "blizzard",
+		addon = nil,
+		priority = 10,
+		isEnabled = function()
+			return true
+		end,
+		register = function(registry, owner)
+			RegisterBlizzardCastBarProvider()
+		end,
+	})
 
-		if EQOLUFPlayerHealthCast then
-			hooksecurefunc(EQOLUFPlayerHealthCast, "Show", function(self)
-				local width, height = self:GetSize()
-				frame:AdjustDimensions(width, height)
-				frame:UpdateAnchor(self)
-			end)
-		end
-	end
+	---@class ThirdPartyCastBarFrame : Frame
+	---@field statusBar Frame|nil
+	---@field castBar Frame|nil
+	---@field _castbar Frame|nil
+	---@field _bar Frame|nil
+	---@field Text FontString|nil
 
-	if
-		C_AddOns.DoesAddOnExist("Ayije_CDM")
-		and C_AddOns.IsAddOnLoadable("Ayije_CDM")
-		and C_AddOns.IsAddOnLoaded("Ayije_CDM")
-		and Ayije_CastBar
-	then
-		hooksecurefunc(Ayije_CastBar, "Show", function(self)
-			local width, height = self:GetSize()
-			frame:AdjustDimensions(width, height)
-			frame:UpdateAnchor(self.castBar)
-		end)
-	end
+	---@class ThirdPartyCastBar
+	---@field id string
+	---@field addon string
+	---@field priority number
+	---@field container fun(): ThirdPartyCastBarFrame|nil the frame the addon shows/hides
+	---@field anchor fun(container: ThirdPartyCastBarFrame): Frame|nil the status bar ticks attach to
+	---@field text (fun(container: ThirdPartyCastBarFrame): FontString|nil)|nil
 
-	if
-		C_AddOns.DoesAddOnExist("AzortharionUI")
-		and C_AddOns.IsAddOnLoadable("AzortharionUI")
-		and C_AddOns.IsAddOnLoaded("AzortharionUI")
-	then
-		---@type FunctionContainer|nil
-		local ticker = nil
-		local attempts = 0
-		local maxAttempts = 5
+	---@type ThirdPartyCastBar[]
+	local thirdPartyCastBars = {
+		{
+			id = "msuf",
+			addon = "MidnightSimpleUnitFrames",
+			priority = 50,
+			container = function()
+				return MSUF_PlayerCastbar
+			end,
+			anchor = function(container)
+				return container.statusBar
+			end,
+		},
+		{
+			id = "eqol_castbar",
+			addon = "EnhanceQOL",
+			priority = 40,
+			container = function()
+				return EQOLPlayerCastBar
+			end,
+			anchor = function(container)
+				return container
+			end,
+			text = function(container)
+				return container.Text
+			end,
+		},
+		{
+			id = "eqol_uf",
+			addon = "EnhanceQOL",
+			priority = 40,
+			container = function()
+				return EQOLUFPlayerHealthCast
+			end,
+			anchor = function(container)
+				return container
+			end,
+			text = function(container)
+				return container.Text
+			end,
+		},
+		{
+			id = "ayije_cdm",
+			addon = "Ayije_CDM",
+			priority = 45,
+			container = function()
+				return Ayije_CastBar
+			end,
+			anchor = function(container)
+				return container.castBar
+			end,
+		},
+		{
+			id = "azortharion",
+			addon = "AzortharionUI",
+			priority = 45,
+			container = function()
+				return AUI_Castbar_player
+			end,
+			anchor = function(container)
+				return container._castbar
+			end,
+		},
+		{
+			id = "ellesmere",
+			addon = "EllesmereUI",
+			priority = 45,
+			container = function()
+				return ERB_CastBarFrame
+			end,
+			anchor = function(container)
+				return container._bar
+			end,
+		},
+	}
 
-		ticker = C_Timer.NewTicker(1, function()
-			attempts = attempts + 1
+	for _, castBar in ipairs(thirdPartyCastBars) do
+		CastBarRegistry:RegisterProvider({
+			id = castBar.id,
+			addon = castBar.addon,
+			priority = castBar.priority,
+			isEnabled = function()
+				local loadedOrLoading = C_AddOns.IsAddOnLoaded(castBar.addon)
+				return loadedOrLoading
+			end,
+			register = function(registry, owner)
+				-- some of these globals are created well after their addon finished loading
+				local function Resolve()
+					local container = castBar.container()
 
-			if attempts > maxAttempts and ticker ~= nil then
-				ticker:Cancel()
-				ticker = nil
-				return
-			end
+					if container == nil or castBar.anchor(container) == nil then
+						return nil
+					end
 
-			if AUI_Castbar_player == nil then
-				return
-			end
+					return container
+				end
 
-			if ticker ~= nil then
-				ticker:Cancel()
-				ticker = nil
-			end
+				local function Retry(container)
+					local function Sync()
+						local anchor = castBar.anchor(container)
 
-			hooksecurefunc(AUI_Castbar_player, "Show", function(self)
-				local width, height = self._castbar:GetSize()
-				frame:AdjustDimensions(width, height)
-				frame:UpdateAnchor(self._castbar)
-			end)
-		end)
-	end
+						if anchor == nil then
+							return
+						end
 
-	if
-		C_AddOns.DoesAddOnExist("EllesmereUI")
-		and C_AddOns.IsAddOnLoadable("EllesmereUI")
-		and C_AddOns.IsAddOnLoaded("EllesmereUI")
-	then
-		---@type FunctionContainer|nil
-		local ticker = nil
-		local attempts = 0
-		local maxAttempts = 5
+						owner:OnCastBarShown(
+							castBar.id,
+							anchor,
+							castBar.text ~= nil and castBar.text(container) or nil,
+							castBar.priority
+						)
+					end
 
-		ticker = C_Timer.NewTicker(1, function()
-			attempts = attempts + 1
+					local function OnHide()
+						owner:OnCastBarHidden(castBar.id)
+					end
 
-			if attempts > maxAttempts and ticker ~= nil then
-				ticker:Cancel()
-				ticker = nil
-				return
-			end
+					Sync()
 
-			if ERB_CastBarFrame == nil then
-				return
-			end
+					-- OnShow/OnHide also covers SetShown and parent visibility changes,
+					-- fall back to the plain methods for frames without script handlers
+					if container.HookScript ~= nil then
+						container:HookScript("OnShow", Sync)
+						container:HookScript("OnHide", OnHide)
+					else
+						hooksecurefunc(container, "Show", Sync)
+						hooksecurefunc(container, "Hide", OnHide)
+					end
+				end
 
-			if ticker ~= nil then
-				ticker:Cancel()
-				ticker = nil
-			end
-
-			hooksecurefunc(ERB_CastBarFrame, "Show", function(self)
-				local width, height = self._bar:GetSize()
-				frame:AdjustDimensions(width, height)
-				frame:UpdateAnchor(self._bar)
-			end)
-		end)
+				registry:ResolveWithRetry(Resolve, Retry)
+			end,
+		})
 	end
 end)

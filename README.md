@@ -83,11 +83,12 @@ Alpha is optional and will default to 1.
 
 ### Supported Cast Bars
 
+- the default UI cast bar, including the overlay cast bar used by e.g. the talent and crafting frames
 - MidnightSimpleUnitFrames
 - ActionBarsEnhanced
-- EnhanceQOL
+- EnhanceQOL (both the standalone cast bar and the unit frame cast bar)
 - Ayije_CDM
 - AzortharionUI
 - EllesmereUI
 
-If you have multiple cast bars shown, e.g. from both unit frames and BetterCooldownManager, disable all but one, otherwise they'll compete.
+Ticks are drawn on every supported cast bar that's currently visible, so there's no need to disable any of them. The `Mass Disintegrate` clip warning is shown on a single bar only, picking the most specific one that's visible.
